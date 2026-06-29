@@ -205,6 +205,7 @@ application.yml            (공통)
 | `JWT_SIGNING_KEY` | JWT 서명 키 | dev/prod (Secrets Manager) |
 | `CLAUDE_API_KEY` | LLM | dev/prod (Secrets Manager) |
 | `OPENAI_API_KEY` | 임베딩 | dev/prod (Secrets Manager) |
+| `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | Naver 검색(뉴스) API (ADR-002) | dev/prod (Secrets Manager) |
 | `NEWS_API_KEY` | NewsAPI | dev/prod (Secrets Manager) |
 | `DART_API_KEY` | DART | dev/prod (Secrets Manager) |
 | `KIS_API_KEY` / `KIS_API_SECRET` | KIS Developers | dev/prod (Secrets Manager) |
