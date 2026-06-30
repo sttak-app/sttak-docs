@@ -174,9 +174,10 @@ LLM 응답 등 토큰 단위 응답:
 - 토큰 만료/위조 → `401 UNAUTHORIZED`.
 - 권한 부족 → `403 FORBIDDEN`.
 - 토큰의 페이로드(클레임)는 클라이언트가 신뢰할 수 없다 — 서버는 항상 재검증한다.
+- 소셜 로그인은 **공급자별 엔드포인트**(`POST /auth/kakao` · `/auth/google` · `/auth/apple`)로 노출한다. 공급자마다 자격증명 형식(OAuth Access Token / OIDC `idToken` / 애플 `identityToken`)이 달라 단일 엔드포인트로 묶지 않는다(근거: `docs/decisions/ADR-008-social-login.md`). 엔드포인트별 입출력은 `docs/iosapi/apidocs.md §1`.
 - 토큰 갱신은 별도의 행위 경로(`POST /auth/refresh`)로 처리하고, 일반 API의 자동 재발급은 하지 않는다.
 
-> 인증/인가의 시스템 구조는 `3-1-server-architecture.md §3-1.11`.
+> 인증/인가의 시스템 구조는 `3-1-server-architecture.md §3-1.11`. JWT 설계는 `docs/decisions/ADR-005-jwt-design.md`.
 
 ---
 
