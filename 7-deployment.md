@@ -68,18 +68,19 @@
 
 ### 7.3.1 빌드 단위
 
-각 실행 모듈이 각자의 컨테이너 이미지를 만든다.
+각 실행 모듈이 각자의 컨테이너 이미지를 만든다. **레지스트리는 ECR** *(ADR-005, GHCR 에서 변경)*.
 
 | 모듈 | 이미지 |
 | --- | --- |
-| `sttak-apps/sttak-api` | `ghcr.io/sttak-app/sttak-api:<git-sha>` |
-| `sttak-apps/sttak-admin` | `ghcr.io/sttak-app/sttak-admin:<git-sha>` |
-| `sttak-apps/sttak-batch` | `ghcr.io/sttak-app/sttak-batch:<git-sha>` |
+| `sttak-apps/sttak-api` | `<acct>.dkr.ecr.<region>.amazonaws.com/sttak-api:<env>-<git-sha>` |
+| `sttak-apps/sttak-admin` | `<acct>.dkr.ecr.<region>.amazonaws.com/sttak-admin:<env>-<git-sha>` |
+| `sttak-apps/sttak-batch` | `<acct>.dkr.ecr.<region>.amazonaws.com/sttak-batch:<env>-<git-sha>` |
 
 규약:
 
-- 이미지 태그는 **git SHA (짧은 7자) + branch 명**. 예: `prod-a1b2c3d`, `dev-9f8e7d6`.
-- **`latest` 태그는 사용하지 않는다.** 자동 변경되는 태그는 롤백을 어렵게 만든다.
+- 이미지 태그는 **`<env>-git SHA(짧은 7자)`**. 예: `prod-a1b2c3d`, `dev-9f8e7d6`.
+- **`latest` 태그는 사용하지 않는다.** 자동 변경되는 태그는 롤백을 어렵게 만든다. (ECR 레포는 `IMMUTABLE`.)
+- ECS Task 는 execution role 로 ECR 을 인증 없이 pull, CI 는 OIDC 로 push *(ADR-005)*.
 
 ### 7.3.2 Dockerfile (개념)
 
@@ -102,6 +103,8 @@ ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 
 JVM 옵션은 `JAVA_OPTS` 환경변수로 주입한다.
 
+> **실제 구현** *(ADR-007)*: 위는 개념도다. CI 가 gradle 로 bootJar 를 **1회** 빌드(캐시)하고, 단일 파라미터화 `deploy/Dockerfile` 은 그 jar 만 COPY 한다(Docker 안에서 gradle 재빌드 안 함). 3앱이 `deploy/Dockerfile` 하나를 공유한다.
+
 ---
 
 ## 7.4 CI/CD (GitHub Actions)
@@ -109,20 +112,22 @@ JVM 옵션은 `JAVA_OPTS` 환경변수로 주입한다.
 ### 7.4.1 파이프라인 단계
 
 ```
-push/PR ─► ci.yml ──┐
-                    ├─► build  (Java 21 + Gradle 캐시)
-                    ├─► test   (Unit + Repo 통합 with Testcontainers)
-                    ├─► jacoco verification (≥ 50%)
-                    └─► docker build & push to GHCR  (main / develop 만)
+PR ─► ci.yml ──► _build-test.yml (재사용)
+                  ├─► build  (Java 21 + Gradle 캐시)
+                  ├─► test   (Unit + Repo 통합 with Testcontainers)
+                  └─► jacoco verification (≥ 50%)           ← 머지 게이트(테스트는 항상 전체)
                               │
-                              ▼
-                    deploy-dev.yml  (auto, develop 머지 시)
-                       └─► ECS service update (rolling)
+push(develop) ─► deploy-dev.yml (auto)
+                  ├─► _build-test.yml (동일 빌드 재사용)
+                  ├─► detect-affected  (변경 경로 → 영향 앱 집합)
+                  ├─► build & push to ECR   (affected 앱만, dev-<sha7>)
+                  └─► ECS service update (rolling, affected 앱만)
                               │
-                              ▼
-                    deploy-prod.yml (manual approval, main 머지 시)
-                       └─► DB migration → ECS service update (blue/green)
+push(main)    ─► deploy-prod.yml (manual approval)          ← 다음 단계(stub)
+                  └─► DB migration → ECS service update (blue/green)
 ```
+
+> **멀티모듈 전략** *(ADR-007)*: 테스트는 항상 전체, **이미지 빌드/배포는 affected 앱만**. 공유 라이브러리/빌드설정 변경 ⇒ 3앱 전부, 특정 앱만 변경 ⇒ 그 앱만(path filter + matrix).
 
 ### 7.4.2 트리거
 
@@ -134,7 +139,7 @@ push/PR ─► ci.yml ──┐
 
 ### 7.4.3 비밀 / Secrets
 
-- GitHub Actions Secrets: `AWS_OIDC_ROLE_ARN`, `GHCR_TOKEN`.
+- GitHub Actions Secrets: **`AWS_OIDC_ROLE_ARN` 만** (ECR 채택으로 `GHCR_TOKEN` 폐기 — `ADR-005`).
 - 런타임 비밀 (LLM/시세/JWT 키)은 **GitHub Secrets에 두지 않는다.** AWS Secrets Manager에서 ECS Task가 직접 읽는다 *(NFR-S1)*.
 - AWS 접근은 **OIDC**로 단기 토큰 발급. 정적 액세스 키 금지.
 
@@ -216,6 +221,7 @@ application.yml            (공통)
 ## 7.7 DB 마이그레이션
 
 - 도구: **Flyway** *(CON-O2)*. (Liquibase 도입 시 본 문서 갱신.)
+- > **현황(잠정)**: Flyway 는 **아직 미도입**(로드맵 §7.14 5단계). 그 전까지 `local`·`dev` 는 `spring.jpa.hibernate.ddl-auto=update` 로 스키마를 맞춘다. Flyway 도입 시 `ddl-auto` 를 `validate` 로 전환하고 아래 실행 시점 정책을 적용한다.
 - 위치: `sttak-domain/src/main/resources/db/migration/V<번호>__<설명>.sql`
 - 명명: `V1__init_user.sql`, `V2__add_trade.sql`. 한 번 커밋된 마이그레이션은 **수정 금지**.
 - 실행 시점:
@@ -242,8 +248,10 @@ application.yml            (공통)
 
 ### 7.8.3 batch
 
-- ECS Scheduled Task로 등록.
-- 동시 실행 방지(`max concurrent: 1`). 이전 잡이 길어지면 다음 트리거는 스킵하고 알람.
+- **상시 Fargate 서비스**(`desired_count=1`, ALB 없음)로 배포 *(ADR-006)*. 앱이 in-process `@Scheduled`(`@EnableScheduling`)로 cron 을 돌리므로, 주기마다 컨테이너를 새로 띄우는 ECS Scheduled Task 모델 대신 상시 실행한다.
+- 동시 실행 방지(`max concurrent: 1`): **인스턴스 1개 = 스케줄러 1개**로 중첩을 원천 차단. 2개 이상으로 스케일 시 분산 락 필요(후속 ADR).
+- 배포 동작은 api/admin 과 동일(새 task def revision 등록 → `update-service` rolling).
+- > 진짜 Scheduled Task(필요 시에만 실행, 비용↓)로 전환하려면 batch 를 "부팅 → 잡 1회 → 종료"로 재설계해야 한다 *(ADR-006 Consequences)*.
 
 ---
 
@@ -302,29 +310,27 @@ docker run -d --name sttak-pg \
 ## 7.13 디렉터리/파일 — 운영 산출물
 
 ```
-sttak-backend-demo/
-├── .github/
-│   └── workflows/
-│       ├── ci.yml
-│       ├── deploy-dev.yml
-│       └── deploy-prod.yml
+sttak-backend/
+├── .github/workflows/
+│   ├── ci.yml                 PR 머지 게이트 (재사용 워크플로 호출)
+│   ├── _build-test.yml        재사용: build/test/jacoco + bootJar 아티팩트
+│   ├── deploy-dev.yml         develop → affected 빌드/푸시/배포
+│   └── deploy-prod.yml        (stub) main + 수동승인 + blue/green
 ├── deploy/
-│   ├── Dockerfile.api
-│   ├── Dockerfile.admin
-│   ├── Dockerfile.batch
+│   ├── Dockerfile             3앱 공용 단일 파라미터화 (ADR-007)
+│   ├── render-taskdef.sh      task-def 템플릿 placeholder 치환
 │   └── task-definitions/
-│       ├── api.dev.json
-│       ├── api.prod.json
-│       ├── admin.dev.json
-│       ├── admin.prod.json
-│       ├── batch.dev.json
-│       └── batch.prod.json
-└── sttak-domain/src/main/resources/db/migration/
-    ├── V1__init_user.sql
-    └── ...
+│       ├── api.dev.json / admin.dev.json / batch.dev.json   (prod.*.json 은 후속)
+└── sttak-domain/src/main/resources/db/migration/   (Flyway 도입 시 — §7.7)
+
+sttak-infra/                   별도 리포 — Terraform IaC (ADR-007)
+└── terraform/
+    ├── modules/{iam-oidc,ecr,network,rds,secrets,ecs-cluster,ecs-service}
+    └── envs/dev/              S3 backend + 모듈 조립
 ```
 
-> 위 디렉터리는 **도입 시점에 함께 생성**한다. MVP 초기 단계에서는 GitHub Actions만 우선 구비.
+> 위 산출물은 **도입 시점에 함께 생성**한다. dev 범위는 구비 완료(prod 워크플로/task-def 은 후속).
+> 레지스트리는 ECR *(ADR-005)*, batch 는 상시 서비스 *(ADR-006)*, IaC·멀티모듈 전략은 *(ADR-007)*.
 
 ---
 
@@ -332,7 +338,7 @@ sttak-backend-demo/
 
 1. **로컬 Postgres 17 + Testcontainers** — 이미 가능.
 2. **CI(`ci.yml`)** — 빌드/테스트/Jacoco. (1순위 도입)
-3. **GHCR 이미지 빌드/푸시**.
+3. **ECR 이미지 빌드/푸시** *(ADR-005)*.
 4. **dev ECS 서비스 + 자동 배포**.
 5. **Flyway 도입 + 마이그레이션 잡**.
 6. **prod ECS Blue/Green + 수동 승인**.
