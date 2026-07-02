@@ -23,7 +23,7 @@
 
 | 도메인 그룹 | 테이블 |
 | --- | --- |
-| 사용자/계좌 | `User`, `Account` |
+| 사용자/계좌 | `User`, `Account` (V1 구현: `members`, `accounts` — §3-4.2.1) |
 | 시장/종목 | `Market`, `MarketSessions`, `Stock`, `Sector`, `Stock_Sector` |
 | 주문/보유/관심 | `Order`, `Holdings`, `Watchlist` |
 | 주문 회고 | `OrderReview`, `OrderReason`, `ReasonTemplate`, `ReasonEvaluation` |
@@ -41,12 +41,19 @@
 
 ### 3-4.2.1 사용자/계좌
 
-- `User` — PK `id` (UUID), 인증 정보(`email`, `password`, `phone_number`), `role`
-- `Account` — PK `acount_id`, `id*` → `User.id`, `cash_balance`, `total_asset`, `account_status`
+> **구현됨 (V1 마이그레이션 — SCRUM-46 / ADR-007·008·009).** 이 그룹은 초안에서 확정되어 실제 스키마로 구현되었다.
+> 운영 DB(PostgreSQL) 기준 실제 테이블명은 **복수형 `members` / `accounts`**, 회원 FK 컬럼은 `member_id`(모호한 `id`/`id2` 대신)다.
+> 명명 확정 사유(복수형 채택, `member_id` FK)는 [ADR-009](../decisions/ADR-009-member-account-schema-naming.md).
+> 소셜 로그인 요구로 `members` 에 `nickname`·`level`·`social_provider`·`social_id` 가 추가되었다.
+
+- `members` (초안 `User`) — PK `id` (UUID), `role`(`USER`|`ADMIN`), 인증 정보(`email`·`password`·`phone_number` — 소셜 전용이라 nullable), 프로필(`nickname` NOT NULL, `level` INT DEFAULT 1), 소셜 신원(`social_provider` `KAKAO`|`GOOGLE`|`APPLE`, `social_id`), `created_at`/`updated_at`
+  - 복합 UNIQUE `uq_members_social (social_provider, social_id)` — 공급자 간 ID 충돌 없이 중복 가입 방지
+- `accounts` (초안 `Account`) — PK `account_id` (BIGSERIAL), `member_id*` → `members.id`, `cash_balance`(가입 시 `10,000,000`), `total_asset`, `account_status`(`ACTIVE`|`CLOSED`), `created_at`/`updated_at`
+  - 회원 최초 가입과 **동일 트랜잭션**으로 자동 생성. 인덱스 `idx_accounts_member_id`.
 
 관계:
 
-- `User 1 ──< N Account` (`Account.id` → `User.id`)
+- `members 1 ──< N accounts` (`accounts.member_id` → `members.id`; 현재 정책상 회원당 1계좌)
 
 ### 3-4.2.2 시장/종목
 
@@ -112,6 +119,18 @@
 
 - `News N >──< N Stock` (via `News_Stock`, with `factor`)
 - `News N >──< N term` (via `News_Term`)
+
+> **AI 가공 확장 (ADR-003)** — 수집 원문을 iOS `/news` 카드 형태로 가공하기 위해 다음을 추가한다.
+> 기사 공용 필드는 `News`, 종목별로 달라지는 필드는 `News_Stock` 에 둔다(계약 §3-3.15).
+>
+> - `News` +: `easy_title`(쉬운 제목), `easy_one_liner`(한 줄, ≤100자), `easy_detail`(상세 풀이),
+>   `processing_status` ENUM(`COLLECTED`,`ENRICHED`,`FAILED`), `enriched_at`
+>   - 기존 `news_summary`/`easy_content` 는 위 신규 필드로 대체·정리 (§3-4.5 v2 DDL 에서 반영).
+> - `News_Stock` +: `reason`(왜 호재/악재인지 한 줄 근거). `factor` 는 수집 시 NULL, 가공 시 채움.
+> - `News_Stock_Why_Point` (신규 자식): PK `why_point_id`, `news_stock_id*` → `News_Stock`, `seq`, `content`
+>   — 카드의 `whyPoints[]`(왜 중요한지) 정규화, 순서 보존.
+> - `lead`(원문 미리보기)는 `News.original_content` 앞부분에서 파생하며 별도 컬럼을 두지 않는다.
+> - 자연 키 `News.original_link` 는 UNIQUE(중복 적재 방지). iOS 조회는 `processing_status='ENRICHED'` 만 노출.
 
 ### 3-4.2.7 퀴즈
 
@@ -436,7 +455,7 @@ v2 DDL을 만들 때 일괄 반영한다.
 
 | 위치 | 현재 | 수정안 |
 | --- | --- | --- |
-| `Account`, `Order`, `Holdings` | `acount_id` | `account_id` |
+| `Account`, `Order`, `Holdings` | `acount_id` | `account_id` (✅ `accounts` 는 V1 에서 `account_id` 로 구현. `Order`/`Holdings` 는 미구현) |
 | `Order`, `Holdings`, `Stock`, `Watchlist`, `News_Stock`, `Stock_Sector`, `Stock_Candle` | `stokc_id` | `stock_id` |
 | `Chart_Signal_Explanations` | `exlpanation` | `explanation` |
 | `Holdings` | `upldated_at` | `updated_at` |
@@ -447,8 +466,8 @@ v2 DDL을 만들 때 일괄 반영한다.
 ### B. 명명 일관성
 
 - ERDCloud 자동 생성으로 보이는 `2` 접미사 (`market_id2`, `sector_id2`, `id2`) 제거 — 각각 `market_id` / `sector_id` / `user_id` 로 정리.
-- 테이블명 컨벤션 결정: snake_case + 단수형 (`order`, `order_review`, `chart_term`) 권장. 현재 `Order`, `term`, `User`, `Stock_Chart_Signals`, `MarketSessions` 등이 혼재.
-- `Watchlist.id2` 와 `Quiz_User.id` 와 `Account.id` 가 모두 `User.id`를 가리키는데 이름이 다르다 → `user_id`로 통일.
+- 테이블명 컨벤션 결정: snake_case + **복수형** 확정 ([ADR-009](../decisions/ADR-009-member-account-schema-naming.md) — 잠정 "단수형" 권고에서 변경; `user` 예약어 회피·집합 관례). 현재 `Order`, `term`, `User`, `Stock_Chart_Signals`, `MarketSessions` 등 혼재 → 구현 시 `members`/`accounts` 처럼 복수형으로 정합.
+- `Watchlist.id2` 와 `Quiz_User.id` 와 `Account.id` 가 모두 `User.id`를 가리키는데 이름이 다르다. (✅ `accounts` 는 V1 에서 `member_id` → `members.id` 로 확정 — [ADR-009](../decisions/ADR-009-member-account-schema-naming.md). FK 규칙은 `{참조 엔티티}_id`, 즉 회원 FK 는 `member_id` 로 통일. 나머지 미구현 테이블도 이 규칙으로 정합.)
 - `Chart_Signal_Explanations.Field` 의 대문자 시작 + `Field` 라는 모호한 이름 — 의미를 살린 이름으로 (예: `field_name`, `aspect`).
 
 ### C. PK 타입 일관성
