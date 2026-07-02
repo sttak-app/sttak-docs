@@ -53,7 +53,7 @@
                   ┌───────────────────┐         ┌───────────────────┐
                   │ sttak-external    │         │  외부 API 벤더    │
                   │ (Port 구현 어댑터)│ ─────▶  │ NewsAPI · DART    │
-                  └───────────────────┘         │ KIS · LLM Provider│
+                  └───────────────────┘         │ data.go.kr · LLM  │
                                                 └───────────────────┘
 ```
 
@@ -197,7 +197,8 @@ com.sttak.sttakcommon
 com.sttak.sttakexternal
 └── <context>/
     ├── ClaudeNewsSummarizationAdapter      implements NewsSummarizationPort
-    ├── KisStockQuoteAdapter                implements StockQuotePort
+    ├── DataGoKrStockPriceAdapter           implements StockQuotePort         (일봉, ADR-010)
+    ├── DataGoKrKrxListingAdapter           implements StockListingPort       (종목 마스터, ADR-010)
     ├── ClaudeChatStreamAdapter             implements ChatStreamPort
     ├── DartDisclosureAdapter               implements DisclosurePort
     └── ...
@@ -345,7 +346,8 @@ LLM / 시세 / 뉴스 등 외부 시스템 호출은 **도메인 Port의 구현�
 sttak-domain                          sttak-external
 ─────────────────                     ───────────────────────────────────
 NewsSummarizationPort   ◀── 구현 ─── ClaudeNewsSummarizationAdapter
-StockQuotePort          ◀── 구현 ─── KisStockQuoteAdapter
+StockQuotePort          ◀── 구현 ─── DataGoKrStockPriceAdapter   (일봉, ADR-010)
+StockListingPort        ◀── 구현 ─── DataGoKrKrxListingAdapter   (종목 마스터, ADR-010)
 ChatStreamPort          ◀── 구현 ─── ClaudeChatStreamAdapter
 EmbeddingPort           ◀── 구현 ─── OpenAIEmbeddingAdapter
 DisclosurePort          ◀── 구현 ─── DartDisclosureAdapter
@@ -377,7 +379,8 @@ NewsCollectionPort      ◀── 구현 ─── NewsApiCollectionAdapter
 
 - 트리거: 스케줄 (Cron / `@Scheduled`).
 - 책임:
-  1. **뉴스 / 공시 수집** — NewsAPI, DART, KIS API.
+  1. **뉴스 / 공시 / 시세 수집** — NewsAPI, DART, **data.go.kr 금융위 오픈API(일봉 OHLCV·종목 마스터, [ADR-010](../decisions/ADR-010-market-data-source-datagokr.md))**.
+     - 시세 일봉 수집분은 모의투자 체결의 정산 트리거가 된다([ADR-011](../decisions/ADR-011-mock-trade-execution-model.md)).
   2. **정제 / 종목 태깅** — 종목 코드 매칭, 클러스터링.
   3. **100자 요약 (LLM)** — 클러스터 대표 1건만 호출.
   4. **임베딩 적재** — Vector DB.

@@ -148,7 +148,7 @@ ROI가 가장 높다. 분기·경계값 위주로 촘촘히.
 ## 5-1.8 SSE / 데이터 파이프라인 / 부하
 
 - **SSE** — 단위: 토큰 인코더/이벤트 빌더. 통합: 가짜 `ChatStreamPort`로 `event: token/source/done` 순서 검증. E2E는 1–2건.
-- **sttak-batch** — 단위: 분기 케이스. 통합: 스텝 입출력 스키마. 외부 API(NewsAPI/DART/KIS)는 **반드시 stub**.
+- **sttak-batch** — 단위: 분기 케이스. 통합: 스텝 입출력 스키마. 외부 API(NewsAPI/DART/**data.go.kr 금융위 시세·종목**)는 **반드시 stub**.
 - **부하** — k6/Gatling 권장. PR 게이트 아님. 주 1회 stage 자동 실행. 시나리오:
   - L-1: `GET /home/briefing` VU 500 — p95 ≤ 1500ms (NFR-P1).
   - L-2: `POST /trades` 동시 100 — 잔고 일관성 (NFR-D2).

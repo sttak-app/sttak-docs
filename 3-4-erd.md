@@ -1,4 +1,4 @@
-# 3-4. ERD (Entity-Relationship Diagram) — sTTak 백엔드
+ # 3-4. ERD (Entity-Relationship Diagram) — sTTak 백엔드
 
 본 문서는 sTTak 백엔드의 **데이터 모델 초안(ERD)** 을 정리한다.
 도메인 구현을 시작하기 전 합의해야 할 테이블/컬럼/관계의 출발점이며,
@@ -23,7 +23,7 @@
 
 | 도메인 그룹 | 테이블 |
 | --- | --- |
-| 사용자/계좌 | `users`, `Account` |
+| 사용자/계좌 | `User`, `Account` (V1 구현: `members`, `accounts` — §3-4.2.1) |
 | 시장/종목 | `Market`, `MarketSessions`, `Stock`, `Sector`, `Stock_Sector` |
 | 주문/보유/관심 | `Order`, `Holdings`, `Watchlist` |
 | 주문 회고 | `OrderReview`, `OrderReason`, `ReasonTemplate`, `ReasonEvaluation` |
@@ -41,20 +41,30 @@
 
 ### 3-4.2.1 사용자/계좌
 
-- `users` — PK `id` (UUID), 인증 정보(`email`, `password`, `phone_number`), `role` (테이블명 결정: ADR-002)
-- `Account` — PK `acount_id`, `id*` → `users.id`, `cash_balance`, `total_asset`, `account_status`
+> **구현됨 (V1 마이그레이션 — SCRUM-46 / ADR-007·008·009).** 이 그룹은 초안에서 확정되어 실제 스키마로 구현되었다.
+> 운영 DB(PostgreSQL) 기준 실제 테이블명은 **복수형 `members` / `accounts`**, 회원 FK 컬럼은 `member_id`(모호한 `id`/`id2` 대신)다.
+> 명명 확정 사유(복수형 채택, `member_id` FK)는 [ADR-009](../decisions/ADR-009-member-account-schema-naming.md).
+> 소셜 로그인 요구로 `members` 에 `nickname`·`level`·`social_provider`·`social_id` 가 추가되었다.
+
+- `members` (초안 `User`) — PK `id` (UUID), `role`(`USER`|`ADMIN`), 인증 정보(`email`·`password`·`phone_number` — 소셜 전용이라 nullable), 프로필(`nickname` NOT NULL, `level` INT DEFAULT 1), 소셜 신원(`social_provider` `KAKAO`|`GOOGLE`|`APPLE`, `social_id`), `created_at`/`updated_at`
+  - 복합 UNIQUE `uq_members_social (social_provider, social_id)` — 공급자 간 ID 충돌 없이 중복 가입 방지
+- `accounts` (초안 `Account`) — PK `account_id` (BIGSERIAL), `member_id*` → `members.id`, `cash_balance`(가입 시 `10,000,000`), `total_asset`, `account_status`(`ACTIVE`|`CLOSED`), `created_at`/`updated_at`
+  - 회원 최초 가입과 **동일 트랜잭션**으로 자동 생성. 인덱스 `idx_accounts_member_id`.
 
 관계:
 
-- `users 1 ──< N Account` (`Account.id` → `users.id`)
+- `members 1 ──< N accounts` (`accounts.member_id` → `members.id`; 현재 정책상 회원당 1계좌)
 
 ### 3-4.2.2 시장/종목
 
-- `Market` — PK `market_id`, `country_code`, `currency_code`, `market_name`, `market_code`
-- `MarketSessions` — PK `session_id`, `market_id*` → `Market`, `session_type`, `open_time`, `close_time`, `tradable`
-- `Stock` — PK `stokc_id`, `market_id2*` → `Market.market_id`, `stock_code`, `stock_name`, `listed_date`, `stock_status`
-- `Sector` — PK `sector_id`, `sector_name`
-- `Stock_Sector` — PK `stock_sector_id`, `stokc_id*` → `Stock`, `sector_id2*` → `Sector` (M:N 매핑 테이블)
+> **SCRUM-51 구현**: 복수형 `stocks`(ADR-009). **종목 마스터는 data.go.kr 금융위 KRX상장종목정보(`15094775`)로 동기화**([ADR-010](../decisions/ADR-010-market-data-source-datagokr.md)) — `stock_code`(단축코드)·`stock_name`·**`market_id`*(→`markets` FK)**·`isin_code`·`is_active`. **MVP 대상은 큐레이션 10종목**(삼성전자 005930, SK하이닉스 000660, 현대차 005380, SK스퀘어 402340, 삼성바이오로직스 207940, 삼성물산 028260, 삼성생명 032830, 한화에어로스페이스 012450, 현대모비스 012330, 한미반도체 042700).
+> `Market`/`MarketSessions`(복수형 `markets`/`market_sessions`)는 **API에 없는 정적 참조데이터라 수동 시드**(V4): 시장 KOSPI/KOSDAQ/KONEX(KR/KRW), 정규장 세션 09:00~15:30. `stocks.market`(문자열)은 **`market_id` FK 로 전환**(V4).
+
+- `Market` (구현 `markets`) — PK `market_id`, `market_code`(자연 유일키)·`market_name`·`country_code`·`currency_code`. 수동 시드.
+- `MarketSessions` (구현 `market_sessions`) — PK `session_id`, `market_id*` → `markets`, `session_type`, `open_time`, `close_time`, `tradable`. `UNIQUE(market_id, session_type)`.
+- `Stock` (구현 `stocks`) — PK `stock_id`, `market_id*` → `markets.market_id`, `stock_code`, `stock_name`, `isin_code`, `is_active` (`listed_date`/`stock_status`는 미도입).
+- `Sector` — PK `sector_id`, `sector_name` — **SCRUM-51 구현(`sectors`): GICS 11섹터 자체 taxonomy 수동 시드([ADR-012](../decisions/ADR-012-sector-classification.md)). `sector_code`·`description` 추가.**
+- `Stock_Sector` — PK `stock_sector_id`, `stokc_id*` → `Stock`, `sector_id2*` → `Sector` (M:N 매핑 테이블) — **구현(`stock_sectors`): `UNIQUE(stock_id, sector_id)`. 복합/지주 기업은 복수 섹터(예: SK스퀘어=IT+금융, 삼성물산=산업재+경기소비재).**
 
 관계:
 
@@ -63,6 +73,8 @@
 - `Stock N >──< N Sector` (via `Stock_Sector`)
 
 ### 3-4.2.3 주문/보유/관심
+
+> **모의투자 체결 모델([ADR-011](../decisions/ADR-011-mock-trade-execution-model.md))**: `order_status` 는 `PENDING`(접수) → `FILLED`(체결)/`REJECTED`(잔고·수량 미달) 흐름. 체결가(`order_price`)는 **매수=주문일(D) 시가 / 매도=주문일(D) 종가**로, D의 일봉이 도착하는 **다음 영업일 배치에서 정산**된다. 체결일(예: `filled_date`) 컬럼이 필요.
 
 - `Order` — PK `order_id`, `acount_id*` → `Account`, `stokc_id*` → `Stock`, `order_side`(ENUM), `order_price`, `order_quantity`, `order_status`(ENUM), `order_at`
 - `Holdings` — PK `holdings_id`, `acount_id*` → `Account`, `stokc_id*` → `Stock`, `quantity`, `average_price`, `total_buy_amount`
@@ -89,6 +101,8 @@
 
 ### 3-4.2.5 차트/시그널
 
+> **SCRUM-51 계획**: `Stock_Candle` 은 복수형 `stock_candles`(ADR-009)로 구현 예정. **일봉(`candle_type='1D'`)만 수집**하며 소스는 data.go.kr 금융위 주식시세정보(`15094808`)([ADR-010](../decisions/ADR-010-market-data-source-datagokr.md)). 컬럼: `stock_id*`→`stocks`, `candle_type`, `market_date`, `open_price`/`high_price`/`low_price`/`close_price`/`volume`, `UNIQUE(stock_id, candle_type, market_date)`. 주봉/월봉은 향후 일봉 집계로 파생. 이 일봉이 모의투자 체결 정산 트리거([ADR-011](../decisions/ADR-011-mock-trade-execution-model.md)).
+
 - `Stock_Candle` — PK `candle_id`, `stokc_id*` → `Stock`, OHLCV(`open`/`high`/`low`/`close`/`volume`), `market_date`
 - `Chart_Terms` — PK `chart_term_id`, `term_name`(ENUM), `easy_meaning`, `detail_meaning`
 - `Stock_Chart_Signals` — PK `chart_signal_id`, `candle_id*` → `Stock_Candle`, `chart_term_id*` → `Chart_Terms` (특정 캔들에 어떤 차트 용어가 잡혔는지)
@@ -112,6 +126,18 @@
 
 - `News N >──< N Stock` (via `News_Stock`, with `factor`)
 - `News N >──< N term` (via `News_Term`)
+
+> **AI 가공 확장 (ADR-003)** — 수집 원문을 iOS `/news` 카드 형태로 가공하기 위해 다음을 추가한다.
+> 기사 공용 필드는 `News`, 종목별로 달라지는 필드는 `News_Stock` 에 둔다(계약 §3-3.15).
+>
+> - `News` +: `easy_title`(쉬운 제목), `easy_one_liner`(한 줄, ≤100자), `easy_detail`(상세 풀이),
+>   `processing_status` ENUM(`COLLECTED`,`ENRICHED`,`FAILED`), `enriched_at`
+>   - 기존 `news_summary`/`easy_content` 는 위 신규 필드로 대체·정리 (§3-4.5 v2 DDL 에서 반영).
+> - `News_Stock` +: `reason`(왜 호재/악재인지 한 줄 근거). `factor` 는 수집 시 NULL, 가공 시 채움.
+> - `News_Stock_Why_Point` (신규 자식): PK `why_point_id`, `news_stock_id*` → `News_Stock`, `seq`, `content`
+>   — 카드의 `whyPoints[]`(왜 중요한지) 정규화, 순서 보존.
+> - `lead`(원문 미리보기)는 `News.original_content` 앞부분에서 파생하며 별도 컬럼을 두지 않는다.
+> - 자연 키 `News.original_link` 는 UNIQUE(중복 적재 방지). iOS 조회는 `processing_status='ENRICHED'` 만 노출.
 
 ### 3-4.2.7 퀴즈
 
@@ -438,7 +464,7 @@ v2 DDL을 만들 때 일괄 반영한다.
 
 | 위치 | 현재 | 수정안 |
 | --- | --- | --- |
-| `Account`, `Order`, `Holdings` | `acount_id` | `account_id` |
+| `Account`, `Order`, `Holdings` | `acount_id` | `account_id` (✅ `accounts` 는 V1 에서 `account_id` 로 구현. `Order`/`Holdings` 는 미구현) |
 | `Order`, `Holdings`, `Stock`, `Watchlist`, `News_Stock`, `Stock_Sector`, `Stock_Candle` | `stokc_id` | `stock_id` |
 | `Chart_Signal_Explanations` | `exlpanation` | `explanation` |
 | `Holdings` | `upldated_at` | `updated_at` |
@@ -449,8 +475,8 @@ v2 DDL을 만들 때 일괄 반영한다.
 ### B. 명명 일관성
 
 - ERDCloud 자동 생성으로 보이는 `2` 접미사 (`market_id2`, `sector_id2`, `id2`) 제거 — 각각 `market_id` / `sector_id` / `user_id` 로 정리.
-- 테이블명 컨벤션 결정: snake_case + 단수형 (`order`, `order_review`, `chart_term`) 권장. 현재 `Order`, `term`, `Stock_Chart_Signals`, `MarketSessions` 등이 혼재. **사용자 테이블만 예외로 `users` (복수형)** — PostgreSQL 예약어 `USER` 회피 사유, 결정 근거는 `docs/decisions/ADR-002-user-table-naming.md`.
-- `Watchlist.id2` 와 `Quiz_User.id` 와 `Account.id` 가 모두 `users.id`를 가리키는데 이름이 다르다 → `user_id`로 통일.
+- 테이블명 컨벤션 결정: snake_case + **복수형** 확정 ([ADR-009](../decisions/ADR-009-member-account-schema-naming.md) — 잠정 "단수형" 권고에서 변경; `user` 예약어 회피·집합 관례). 현재 `Order`, `term`, `User`, `Stock_Chart_Signals`, `MarketSessions` 등 혼재 → 구현 시 `members`/`accounts` 처럼 복수형으로 정합.
+- `Watchlist.id2` 와 `Quiz_User.id` 와 `Account.id` 가 모두 `User.id`를 가리키는데 이름이 다르다. (✅ `accounts` 는 V1 에서 `member_id` → `members.id` 로 확정 — [ADR-009](../decisions/ADR-009-member-account-schema-naming.md). FK 규칙은 `{참조 엔티티}_id`, 즉 회원 FK 는 `member_id` 로 통일. 나머지 미구현 테이블도 이 규칙으로 정합.)
 - `Chart_Signal_Explanations.Field` 의 대문자 시작 + `Field` 라는 모호한 이름 — 의미를 살린 이름으로 (예: `field_name`, `aspect`).
 
 ### C. PK 타입 일관성
