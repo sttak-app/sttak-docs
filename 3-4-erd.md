@@ -1,4 +1,4 @@
-# 3-4. ERD (Entity-Relationship Diagram) — sTTak 백엔드
+ # 3-4. ERD (Entity-Relationship Diagram) — sTTak 백엔드
 
 본 문서는 sTTak 백엔드의 **데이터 모델 초안(ERD)** 을 정리한다.
 도메인 구현을 시작하기 전 합의해야 할 테이블/컬럼/관계의 출발점이며,
@@ -57,13 +57,14 @@
 
 ### 3-4.2.2 시장/종목
 
-> **SCRUM-51 계획**: `Stock` 은 복수형 `stocks`(ADR-009)로 구현 예정. **종목 마스터는 data.go.kr 금융위 KRX상장종목정보(`15094775`)로 동기화**([ADR-010](../decisions/ADR-010-market-data-source-datagokr.md)) — `stock_code`(단축코드)·`stock_name`·`market`(시장구분)·`isin_code`·`is_active`. **MVP 대상은 큐레이션 10종목**(삼성전자 005930, SK하이닉스 000660, 현대차 005380, SK스퀘어 402340, 삼성바이오로직스 207940, 삼성물산 028260, 삼성생명 032830, 한화에어로스페이스 012450, 현대모비스 012330, 한미반도체 042700).
+> **SCRUM-51 구현**: 복수형 `stocks`(ADR-009). **종목 마스터는 data.go.kr 금융위 KRX상장종목정보(`15094775`)로 동기화**([ADR-010](../decisions/ADR-010-market-data-source-datagokr.md)) — `stock_code`(단축코드)·`stock_name`·**`market_id`*(→`markets` FK)**·`isin_code`·`is_active`. **MVP 대상은 큐레이션 10종목**(삼성전자 005930, SK하이닉스 000660, 현대차 005380, SK스퀘어 402340, 삼성바이오로직스 207940, 삼성물산 028260, 삼성생명 032830, 한화에어로스페이스 012450, 현대모비스 012330, 한미반도체 042700).
+> `Market`/`MarketSessions`(복수형 `markets`/`market_sessions`)는 **API에 없는 정적 참조데이터라 수동 시드**(V4): 시장 KOSPI/KOSDAQ/KONEX(KR/KRW), 정규장 세션 09:00~15:30. `stocks.market`(문자열)은 **`market_id` FK 로 전환**(V4).
 
-- `Market` — PK `market_id`, `country_code`, `currency_code`, `market_name`, `market_code`
-- `MarketSessions` — PK `session_id`, `market_id*` → `Market`, `session_type`, `open_time`, `close_time`, `tradable`
-- `Stock` — PK `stokc_id`, `market_id2*` → `Market.market_id`, `stock_code`, `stock_name`, `listed_date`, `stock_status`
-- `Sector` — PK `sector_id`, `sector_name`
-- `Stock_Sector` — PK `stock_sector_id`, `stokc_id*` → `Stock`, `sector_id2*` → `Sector` (M:N 매핑 테이블)
+- `Market` (구현 `markets`) — PK `market_id`, `market_code`(자연 유일키)·`market_name`·`country_code`·`currency_code`. 수동 시드.
+- `MarketSessions` (구현 `market_sessions`) — PK `session_id`, `market_id*` → `markets`, `session_type`, `open_time`, `close_time`, `tradable`. `UNIQUE(market_id, session_type)`.
+- `Stock` (구현 `stocks`) — PK `stock_id`, `market_id*` → `markets.market_id`, `stock_code`, `stock_name`, `isin_code`, `is_active` (`listed_date`/`stock_status`는 미도입).
+- `Sector` — PK `sector_id`, `sector_name` — **SCRUM-51 구현(`sectors`): GICS 11섹터 자체 taxonomy 수동 시드([ADR-012](../decisions/ADR-012-sector-classification.md)). `sector_code`·`description` 추가.**
+- `Stock_Sector` — PK `stock_sector_id`, `stokc_id*` → `Stock`, `sector_id2*` → `Sector` (M:N 매핑 테이블) — **구현(`stock_sectors`): `UNIQUE(stock_id, sector_id)`. 복합/지주 기업은 복수 섹터(예: SK스퀘어=IT+금융, 삼성물산=산업재+경기소비재).**
 
 관계:
 
