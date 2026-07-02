@@ -127,6 +127,18 @@
 - `News N >──< N Stock` (via `News_Stock`, with `factor`)
 - `News N >──< N term` (via `News_Term`)
 
+> **AI 가공 확장 (ADR-003)** — 수집 원문을 iOS `/news` 카드 형태로 가공하기 위해 다음을 추가한다.
+> 기사 공용 필드는 `News`, 종목별로 달라지는 필드는 `News_Stock` 에 둔다(계약 §3-3.15).
+>
+> - `News` +: `easy_title`(쉬운 제목), `easy_one_liner`(한 줄, ≤100자), `easy_detail`(상세 풀이),
+>   `processing_status` ENUM(`COLLECTED`,`ENRICHED`,`FAILED`), `enriched_at`
+>   - 기존 `news_summary`/`easy_content` 는 위 신규 필드로 대체·정리 (§3-4.5 v2 DDL 에서 반영).
+> - `News_Stock` +: `reason`(왜 호재/악재인지 한 줄 근거). `factor` 는 수집 시 NULL, 가공 시 채움.
+> - `News_Stock_Why_Point` (신규 자식): PK `why_point_id`, `news_stock_id*` → `News_Stock`, `seq`, `content`
+>   — 카드의 `whyPoints[]`(왜 중요한지) 정규화, 순서 보존.
+> - `lead`(원문 미리보기)는 `News.original_content` 앞부분에서 파생하며 별도 컬럼을 두지 않는다.
+> - 자연 키 `News.original_link` 는 UNIQUE(중복 적재 방지). iOS 조회는 `processing_status='ENRICHED'` 만 노출.
+
 ### 3-4.2.7 퀴즈
 
 - `Quiz` — PK `quiz_id`, `quiz_content`, `choice_a/b/c/d`, `correct_choice`(INT), `explanation`, `point`

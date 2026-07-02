@@ -203,8 +203,11 @@ application.yml            (공통)
 | `SPRING_DATASOURCE_URL` | JDBC URL | dev/prod |
 | `SPRING_DATASOURCE_USERNAME` / `_PASSWORD` | DB 자격 | dev/prod (Secrets Manager) |
 | `JWT_SIGNING_KEY` | JWT 서명 키 | dev/prod (Secrets Manager) |
-| `CLAUDE_API_KEY` | LLM | dev/prod (Secrets Manager) |
-| `OPENAI_API_KEY` | 임베딩 | dev/prod (Secrets Manager) |
+| `AI_PROVIDER` | 뉴스 AI 가공 제공자 선택: `anthropic`(기본)\|`openai` (ADR-004) | 선택 |
+| `ANTHROPIC_API_KEY` | Claude LLM (뉴스 AI 가공, `AI_PROVIDER=anthropic`, Anthropic SDK 표준 변수명, ADR-003) | dev/prod (Secrets Manager) |
+| `OPENAI_API_KEY` | OpenAI LLM (뉴스 AI 가공 `AI_PROVIDER=openai`, ADR-004) + 임베딩 | dev/prod (Secrets Manager) |
+| `OPENAI_MODEL` | OpenAI 가공 모델 오버라이드 (기본 `gpt-4o-mini`) | 선택 |
+| `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | Naver 검색(뉴스) API (ADR-002) | dev/prod (Secrets Manager) |
 | `NEWS_API_KEY` | NewsAPI | dev/prod (Secrets Manager) |
 | `DART_API_KEY` | DART | dev/prod (Secrets Manager) |
 | `DATA_GO_KR_SERVICE_KEY` | data.go.kr 금융위 시세·종목 API 인증키 (ADR-010) | dev/prod (Secrets Manager) |
