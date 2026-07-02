@@ -23,7 +23,7 @@
 
 | 도메인 그룹 | 테이블 |
 | --- | --- |
-| 사용자/계좌 | `User`, `Account` |
+| 사용자/계좌 | `users`, `Account` |
 | 시장/종목 | `Market`, `MarketSessions`, `Stock`, `Sector`, `Stock_Sector` |
 | 주문/보유/관심 | `Order`, `Holdings`, `Watchlist` |
 | 주문 회고 | `OrderReview`, `OrderReason`, `ReasonTemplate`, `ReasonEvaluation` |
@@ -41,12 +41,12 @@
 
 ### 3-4.2.1 사용자/계좌
 
-- `User` — PK `id` (UUID), 인증 정보(`email`, `password`, `phone_number`), `role`
-- `Account` — PK `acount_id`, `id*` → `User.id`, `cash_balance`, `total_asset`, `account_status`
+- `users` — PK `id` (UUID), 인증 정보(`email`, `password`, `phone_number`), `role` (테이블명 결정: ADR-002)
+- `Account` — PK `acount_id`, `id*` → `users.id`, `cash_balance`, `total_asset`, `account_status`
 
 관계:
 
-- `User 1 ──< N Account` (`Account.id` → `User.id`)
+- `users 1 ──< N Account` (`Account.id` → `users.id`)
 
 ### 3-4.2.2 시장/종목
 
@@ -66,13 +66,13 @@
 
 - `Order` — PK `order_id`, `acount_id*` → `Account`, `stokc_id*` → `Stock`, `order_side`(ENUM), `order_price`, `order_quantity`, `order_status`(ENUM), `order_at`
 - `Holdings` — PK `holdings_id`, `acount_id*` → `Account`, `stokc_id*` → `Stock`, `quantity`, `average_price`, `total_buy_amount`
-- `Watchlist` — PK `watchlist_id`, `id2*` → `User.id`, `stokc_id*` → `Stock`, `is_deleted`, `deleted_at` (soft delete)
+- `Watchlist` — PK `watchlist_id`, `id2*` → `users.id`, `stokc_id*` → `Stock`, `is_deleted`, `deleted_at` (soft delete)
 
 관계:
 
 - `Account 1 ──< N Order`, `Account 1 ──< N Holdings`
 - `Stock 1 ──< N Order`, `Stock 1 ──< N Holdings`, `Stock 1 ──< N Watchlist`
-- `User 1 ──< N Watchlist`
+- `users 1 ──< N Watchlist`
 
 ### 3-4.2.4 주문 회고
 
@@ -116,11 +116,11 @@
 ### 3-4.2.7 퀴즈
 
 - `Quiz` — PK `quiz_id`, `quiz_content`, `choice_a/b/c/d`, `correct_choice`(INT), `explanation`, `point`
-- `Quiz_User` — PK `quiz_user_id`, `id*` → `User.id`, `quiz_id*` → `Quiz`, `start_at`, `end_at`, `is_solved`(ENUM), `selected_choice`
+- `Quiz_User` — PK `quiz_user_id`, `id*` → `users.id`, `quiz_id*` → `Quiz`, `start_at`, `end_at`, `is_solved`(ENUM), `selected_choice`
 
 관계:
 
-- `User N >──< N Quiz` (via `Quiz_User`)
+- `users N >──< N Quiz` (via `Quiz_User`)
 
 ### 3-4.2.8 챗봇
 
@@ -131,9 +131,9 @@
 ## 3-4.3 카디널리티 한눈에 보기
 
 ```
-                ┌──────┐
-                │ User │
-                └──┬───┘
+                ┌───────┐
+                │ users │
+                └───┬───┘
                    │ 1
         ┌──────────┼────────────────────────────────────────────┐
         │ N        │ N                                          │ N
@@ -170,6 +170,8 @@
 ## 3-4.4 원본 DDL (Draft v1)
 
 ERDCloud에서 추출된 초안을 원본 그대로 보존한다. 타이포·길이 누락·FK 부재는 §3-4.5 에서 추적한다.
+
+> **사용자 테이블명 정합 (ADR-002):** 본 v1 원본 DDL 의 `CREATE TABLE `User`` / `ALTER TABLE `User`` 는 보존하지만, v2 부터는 `users` 로 정합되어 있다. 본 문서의 §3-4.1 / §3-4.2 / §3-4.5 본문은 이미 `users` 기준이다. PostgreSQL 예약어 `USER` 와의 충돌이 채택 사유 — `docs/decisions/ADR-002-user-table-naming.md` 참조.
 
 ```sql
 CREATE TABLE `ChatBot` (
@@ -447,8 +449,8 @@ v2 DDL을 만들 때 일괄 반영한다.
 ### B. 명명 일관성
 
 - ERDCloud 자동 생성으로 보이는 `2` 접미사 (`market_id2`, `sector_id2`, `id2`) 제거 — 각각 `market_id` / `sector_id` / `user_id` 로 정리.
-- 테이블명 컨벤션 결정: snake_case + 단수형 (`order`, `order_review`, `chart_term`) 권장. 현재 `Order`, `term`, `User`, `Stock_Chart_Signals`, `MarketSessions` 등이 혼재.
-- `Watchlist.id2` 와 `Quiz_User.id` 와 `Account.id` 가 모두 `User.id`를 가리키는데 이름이 다르다 → `user_id`로 통일.
+- 테이블명 컨벤션 결정: snake_case + 단수형 (`order`, `order_review`, `chart_term`) 권장. 현재 `Order`, `term`, `Stock_Chart_Signals`, `MarketSessions` 등이 혼재. **사용자 테이블만 예외로 `users` (복수형)** — PostgreSQL 예약어 `USER` 회피 사유, 결정 근거는 `docs/decisions/ADR-002-user-table-naming.md`.
+- `Watchlist.id2` 와 `Quiz_User.id` 와 `Account.id` 가 모두 `users.id`를 가리키는데 이름이 다르다 → `user_id`로 통일.
 - `Chart_Signal_Explanations.Field` 의 대문자 시작 + `Field` 라는 모호한 이름 — 의미를 살린 이름으로 (예: `field_name`, `aspect`).
 
 ### C. PK 타입 일관성
@@ -457,8 +459,8 @@ v2 DDL을 만들 때 일괄 반영한다.
 
 ### D. 길이/타입 누락
 
-- `VARCHAR` 길이가 비어 있는 컬럼이 다수 (`User.email`, `User.password`, `User.phone_number`, `Market.market_name`, `Market.market_code`, `Stock.stock_code`, `Stock.stock_name`, `ReasonTemplate.reason_label`, `News.easy_content`, `News.source_name`, `ReasonEvaluation.model_name`) — MySQL에서는 길이 지정이 필요하다.
-- `User.role`, `Market.country_code`, `Market.currency_code` 가 소문자 `enum` 으로 적혀 있음 — `ENUM(...)` 으로 정의 필요.
+- `VARCHAR` 길이가 비어 있는 컬럼이 다수 (`users.email`, `users.password`, `users.phone_number`, `Market.market_name`, `Market.market_code`, `Stock.stock_code`, `Stock.stock_name`, `ReasonTemplate.reason_label`, `News.easy_content`, `News.source_name`, `ReasonEvaluation.model_name`) — MySQL에서는 길이 지정이 필요하다.
+- `users.role`, `Market.country_code`, `Market.currency_code` 가 소문자 `enum` 으로 적혀 있음 — `ENUM(...)` 으로 정의 필요.
 - `News.easy_content` 가 `VARCHAR` 인데, 의미상 가변 길이 본문이라면 `TEXT`가 적합.
 
 ### E. Enum 값 목록 미정
@@ -467,7 +469,7 @@ v2 DDL을 만들 때 일괄 반영한다.
 
 | 테이블 | 컬럼 | 추정 값(예시) |
 | --- | --- | --- |
-| `User` | `role` | `USER`, `ADMIN` |
+| `users` | `role` | `USER`, `ADMIN` |
 | `Order` | `order_side` | `BUY`, `SELL` |
 | `Order` | `order_status` | `PENDING`, `FILLED`, `CANCELLED`, … |
 | `Account` | `account_status` | `ACTIVE`, `CLOSED`, … |
@@ -486,7 +488,7 @@ v2 DDL을 만들 때 일괄 반영한다.
 
 - 현재 DDL에는 FK CONSTRAINT가 단 하나도 없다. §3-4.2 의 관계 표를 근거로 일괄 추가.
 - 자연 유일성 제약 후보:
-  - `User.email` UNIQUE
+  - `users.email` UNIQUE
   - `Account(id, account_status='ACTIVE')` 부분 유니크 — 사용자별 활성 계좌 정책에 따라
   - `Stock(market_id, stock_code)` UNIQUE
   - `Stock_Candle(stock_id, market_date, ...)` UNIQUE (캔들 중복 방지)
@@ -499,7 +501,7 @@ v2 DDL을 만들 때 일괄 반영한다.
 
 ### G. 시점/숫자 표현
 
-- `User`/`Account.created_at` 만 `timestamp`, 나머지는 `DATETIME`. 한 가지로 통일 권장 (JPA Auditing 적용 시 `TIMESTAMP WITH TIME ZONE` 또는 `DATETIME(6)` 일관 사용).
+- `users`/`Account.created_at` 만 `timestamp`, 나머지는 `DATETIME`. 한 가지로 통일 권장 (JPA Auditing 적용 시 `TIMESTAMP WITH TIME ZONE` 또는 `DATETIME(6)` 일관 사용).
 - `OrderReview.profit_loss_rate DECIMAL(19,0)` — 비율인데 소수점이 없다. `DECIMAL(7,4)` (예: `-99.9999` ~ `999.9999`) 등으로 재검토.
 - `OrderReview.proofit_loss_amount DECIMAL(7,4)` — 금액인데 정밀도가 작다. `DECIMAL(19,0)` 또는 통화 단위에 맞춘 값으로 재검토 (위의 rate와 정의가 뒤바뀐 것으로 보임).
 

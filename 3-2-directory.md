@@ -126,7 +126,7 @@ com.sttak.sttakexternal.<context>/
 | 종류 | 규약 | 예시 |
 | --- | --- | --- |
 | Bounded Context 디렉터리 | 단수 명사, 소문자 | `user`, `trade`, `quiz`, `news` |
-| Aggregate Root 클래스 | 컨텍스트 명사 (대문자 시작) | `User`, `Trade`, `QuizSet` |
+| Aggregate Root 클래스 | 컨텍스트 명사 (대문자 시작) | `User`, `Trade`, `Quiz` |
 | 1차 컬렉션 | 복수형 또는 도메인 용어 | `Watchlist`, `TradeHistory` |
 | Value Object | 의미 명사 | `Name`, `Money`, `TickerCode` |
 | 도메인 예외 enum | `<Context>Exception` | `UserException`, `TradeException` |
@@ -141,11 +141,39 @@ com.sttak.sttakexternal.<context>/
 | Application 입력 record | `<Action>Command` | `UserCreateCommand`, `TradeExecuteCommand` |
 | Application 출력 record | `<Context>Result` | `UserResult`, `TradeResult` |
 | Controller | `<Context>Controller` | `UserController` |
-| HTTP 입력 DTO | `<Context><Action>Request` | `UserCreateRequest` |
-| HTTP 출력 DTO | `<Context>Response` | `UserResponse` |
+| HTTP 입력 DTO | `<Action><Object>Request` (동사 + 목적어 + `Request`) | `CreateMemberRequest`, `SubmitQuizAnswerRequest` |
+| HTTP 출력 DTO | `<Action><Object>Response` (동사 + 목적어 + `Response`) | `CreateMemberResponse`, `GetRankingResponse` |
 | 도메인 이벤트 | `<Context><PastAction>Event` | `TradeExecutedEvent` |
 
 > **DDD Entity ≠ JPA Entity.** 영속 객체는 항상 `*JpaEntity` 접미사로 구분한다. 도메인 모델은 접미사 없음.
+
+---
+
+## 3-2.4.1 메서드 네이밍 컨벤션
+
+- 컨트롤러, 서비스
+    - 생성할 때 : `create`
+    - 조회할 때 : 컨트롤러에서는 `get`, 서비스는 `find`
+        - 단건 조회 : `get` + 목적어 + `By` + 필드
+        - 여러 건 조회 : `get` + 목적어s + `By` + 필드
+        - 전체 조회 : `getAll` + 목적어
+    - 수정할 때 : `update`
+    - 삭제할 때 : `delete`
+    - 조회/생성/수정/삭제에 해당하지 않는 도메인 행위는 그 행위를 표현하는 동사를 그대로 쓴다. 컨트롤러/서비스 모두 같은 동사로 통일하며, 조회 패턴과 동일하게 `동사 + 목적어 + By + 필드` 형태를 따른다. 예: `submitQuizAnswerByUserId`, `cancelOrderById`, `publishPostById`, `refundPaymentById`.
+    - 엔티티 변경감지 관련 메소드는 `set` 말고 행위 명시. 예: `updateName(String name)`
+- DTO 클래스 이름도 메서드와 같은 `동사 + 목적어` 구조를 따른다: HTTP 입력은 `<Action><Object>Request`, HTTP 출력은 `<Action><Object>Response`. 예: `CreateMemberRequest`, `SubmitQuizAnswerRequest`, `GetRankingResponse`.
+- DTO/Request에서도 `@Setter`를 쓰지 않는다.
+- 메서드 본문의 첫 줄 앞에는 한 줄을 띈다 (서명의 `{` 와 첫 코드 라인 사이에 빈 줄 한 개). 비어 있는 메서드/한 줄짜리 람다는 해당 없음. 예:
+    ```java
+    @GetMapping("/last")
+    public ApiResponse<GetLastQuizResultResponse> getLastQuizResultByUserId(@CurrentUserId UUID userId) {
+
+        return quizService.findLastQuizResultByUserId(userId)
+                .map(GetLastQuizResultResponse::from)
+                .map(ApiResponse::success)
+                .orElseGet(() -> ApiResponse.success(null));
+    }
+    ```
 
 ---
 

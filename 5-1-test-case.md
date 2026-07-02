@@ -138,7 +138,7 @@ ROI가 가장 높다. 분기·경계값 위주로 촘촘히.
 | **E2E-2** | Watchlist 5개 등록 → 6개째 409 | U2, FR-A3 |
 | **E2E-3** | 매수(rationale 포함) → 포트폴리오/거래내역 갱신 | U9, FR-C2/C3 |
 | **E2E-4** | 매수 직후 회고 자동 생성 → 아카이브 노출 | U10, FR-C4 |
-| **E2E-5** | 퀴즈 조회 → 채점 → 가상 자본금 충전 → 잔고 증가 | U11/U12, FR-D2/D3 |
+| **E2E-5** | `/quizzes/next` → `/quizzes/{id}/submit` ×3 (사이클 진행 카운트 갱신·즉시 자본금 적립) → `/quizzes/next` 가 `cooldown:true` → `/quizzes/last` 3문항 상세 노출 | U11/U12, FR-D1\~D5 |
 | **E2E-6** | 랭킹 조회 시 본인 순위 별도 노출 | U13, FR-E2 |
 
 구성: `@SpringBootTest` + `@AutoConfigureMockMvc` + `application-test.yml` (H2). 외부 어댑터는 `@TestConfiguration` Stub.
@@ -196,8 +196,9 @@ ROI가 가장 높다. 분기·경계값 위주로 촘촘히.
 | FR-A3 (Watchlist ≤ 5) | Unit + Web 슬라이스 + E2E-2 |
 | FR-C2 (rationale 필수) | Web 슬라이스 + E2E-3 |
 | FR-C3 (잔고 일관성) | Repo 통합 + L-2 |
-| FR-D1 (6h 쿨다운) | Unit + Web 슬라이스 |
-| FR-D3 (정답 → 자본금 충전) | Unit + E2E-5 |
+| FR-D1 (rolling 6h / 3문항 사이클) | Unit + Web 슬라이스 |
+| FR-D2/D3 (문항 단위 즉시 채점·즉시 자본금 충전) | Unit + Repo 통합 + E2E-5 |
+| FR-D5 (결과 보기 3문항 상세) | Repo 통합 + Web 슬라이스 + E2E-5 |
 | FR-G2 (SSE) | 통합(스트리밍) + L-3 |
 | NFR-P1 | L-1 |
 | NFR-R1 (장애 격리) | L-4 |
