@@ -57,6 +57,8 @@
 
 ### 3-4.2.2 시장/종목
 
+> **SCRUM-51 계획**: `Stock` 은 복수형 `stocks`(ADR-009)로 구현 예정. **종목 마스터는 data.go.kr 금융위 KRX상장종목정보(`15094775`)로 동기화**([ADR-010](../decisions/ADR-010-market-data-source-datagokr.md)) — `stock_code`(단축코드)·`stock_name`·`market`(시장구분)·`isin_code`·`is_active`. **MVP 대상은 큐레이션 10종목**(삼성전자 005930, SK하이닉스 000660, 현대차 005380, SK스퀘어 402340, 삼성바이오로직스 207940, 삼성물산 028260, 삼성생명 032830, 한화에어로스페이스 012450, 현대모비스 012330, 한미반도체 042700).
+
 - `Market` — PK `market_id`, `country_code`, `currency_code`, `market_name`, `market_code`
 - `MarketSessions` — PK `session_id`, `market_id*` → `Market`, `session_type`, `open_time`, `close_time`, `tradable`
 - `Stock` — PK `stokc_id`, `market_id2*` → `Market.market_id`, `stock_code`, `stock_name`, `listed_date`, `stock_status`
@@ -70,6 +72,8 @@
 - `Stock N >──< N Sector` (via `Stock_Sector`)
 
 ### 3-4.2.3 주문/보유/관심
+
+> **모의투자 체결 모델([ADR-011](../decisions/ADR-011-mock-trade-execution-model.md))**: `order_status` 는 `PENDING`(접수) → `FILLED`(체결)/`REJECTED`(잔고·수량 미달) 흐름. 체결가(`order_price`)는 **매수=주문일(D) 시가 / 매도=주문일(D) 종가**로, D의 일봉이 도착하는 **다음 영업일 배치에서 정산**된다. 체결일(예: `filled_date`) 컬럼이 필요.
 
 - `Order` — PK `order_id`, `acount_id*` → `Account`, `stokc_id*` → `Stock`, `order_side`(ENUM), `order_price`, `order_quantity`, `order_status`(ENUM), `order_at`
 - `Holdings` — PK `holdings_id`, `acount_id*` → `Account`, `stokc_id*` → `Stock`, `quantity`, `average_price`, `total_buy_amount`
@@ -95,6 +99,8 @@
 - `OrderReview 1 ──< N ReasonEvaluation`, `OrderReason 1 ──< N ReasonEvaluation`
 
 ### 3-4.2.5 차트/시그널
+
+> **SCRUM-51 계획**: `Stock_Candle` 은 복수형 `stock_candles`(ADR-009)로 구현 예정. **일봉(`candle_type='1D'`)만 수집**하며 소스는 data.go.kr 금융위 주식시세정보(`15094808`)([ADR-010](../decisions/ADR-010-market-data-source-datagokr.md)). 컬럼: `stock_id*`→`stocks`, `candle_type`, `market_date`, `open_price`/`high_price`/`low_price`/`close_price`/`volume`, `UNIQUE(stock_id, candle_type, market_date)`. 주봉/월봉은 향후 일봉 집계로 파생. 이 일봉이 모의투자 체결 정산 트리거([ADR-011](../decisions/ADR-011-mock-trade-execution-model.md)).
 
 - `Stock_Candle` — PK `candle_id`, `stokc_id*` → `Stock`, OHLCV(`open`/`high`/`low`/`close`/`volume`), `market_date`
 - `Chart_Terms` — PK `chart_term_id`, `term_name`(ENUM), `easy_meaning`, `detail_meaning`

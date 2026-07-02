@@ -144,7 +144,7 @@ MVP 이후를 고려해, 백엔드가 **계약 설계 시점부터 일반화해 
 | **퀴즈 형식** | 4지선다 3문항 / 6h | OX, 빈칸 채우기, 시뮬레이션 퀴즈 | `Quiz` 도메인이 `QuestionKind` 추상화를 갖도록 |
 | **랭킹 종류** | 총 자산 단일 리더보드 | 친구 그룹·동아리 그룹·기간별 리더보드 | 랭킹 Port에 `scope`(global/group), `period`(daily/weekly) 파라미터 |
 | **회고 트리거** | 매매 직후 + 1개월 후 | 종목별 손익 임계치 도달 시, 사용자 요청 시 | Retrospective 생성을 Port로 추상화해 트리거 타입 다양화 |
-| **차트 데이터 소스** | KIS Developers 프록시 | 해외 데이터 벤더 추가 | 시세 어댑터를 `sttak-external`에서 벤더별 구현체로 분리 |
+| **차트 데이터 소스** | data.go.kr 금융위 오픈API(일봉, [ADR-010](../decisions/ADR-010-market-data-source-datagokr.md)) | 분봉·실시간·해외 데이터 벤더 추가 | 시세 어댑터를 `sttak-external`에서 벤더별 구현체로 분리 |
 | **LLM 모델** | Claude Haiku(분류·퀴즈) / Sonnet(챗봇·회고) | 모델 교체, 비용 최적화 라우팅 | LLM Port를 단일화 — 모델 선택은 어댑터/설정에서 결정 |
 | **B2B2C 임베드** | 직접 운영 | 증권사·교육사에 SDK/API 임베드 | API 응답에 추천성 표현이 들어가지 않음을 **계약 수준에서 보장** |
 

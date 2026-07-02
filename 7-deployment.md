@@ -207,7 +207,7 @@ application.yml            (공통)
 | `OPENAI_API_KEY` | 임베딩 | dev/prod (Secrets Manager) |
 | `NEWS_API_KEY` | NewsAPI | dev/prod (Secrets Manager) |
 | `DART_API_KEY` | DART | dev/prod (Secrets Manager) |
-| `KIS_API_KEY` / `KIS_API_SECRET` | KIS Developers | dev/prod (Secrets Manager) |
+| `DATA_GO_KR_SERVICE_KEY` | data.go.kr 금융위 시세·종목 API 인증키 (ADR-010) | dev/prod (Secrets Manager) |
 | `LOG_LEVEL_ROOT` | 로그 레벨 | 선택 (기본 INFO) |
 | `JAVA_OPTS` | JVM 옵션 | 선택 |
 
