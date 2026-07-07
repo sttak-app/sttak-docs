@@ -291,6 +291,16 @@ Controller 는 HTTP 입력 DTO(`<Action><Object>Request`) 를 Application 입력
 
 ---
 
+## 3-2.4.5 Result → Response 변환 지점
+
+Service 는 도메인/View 를 Application 출력(`<Context>Result` record) 으로 만들어 Controller 로 돌려주고, Controller 는 이를 HTTP 출력 DTO(`<Action><Object>Response` record) 로 감싸 `ApiResponse.success(...)` 로 반환한다. 변환 메서드는 `Result` / `Response` 모두 정적 팩토리 `from(...)` 으로 통일한다 (§3-1.6.1 요청 흐름, §3-2.4.2.4 참조).
+
+- Controller 는 `ApiResponse<<Action><Object>Response>` (또는 `void` — 204) 만 반환한다. `Result` 를 Controller 밖으로 노출하지 않는다.
+- `Result.from(...)` 은 도메인 객체와 View record 를 모두 받도록 오버로드해 Command / Query 두 흐름을 위쪽에서 하나로 합친다 (§3-1.5.3).
+- 조회 흐름에서 단순 값 하나만 돌려주면 될 때는 `Result` 를 강요하지 않는다.
+
+---
+
 ## 3-2.5 패키지 가시성 규약
 
 `*.persistence` 하위는 **전부 package-private**.
