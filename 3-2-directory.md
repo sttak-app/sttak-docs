@@ -276,6 +276,12 @@ public enum FooException implements BaseException {
 
 ---
 
+## 3-2.4.3 Controller Swagger 분리
+
+Controller 의 Swagger 어노테이션은 `<Controller>ApiSpec` 인터페이스로 분리한다. 예: `AuthController` → `AuthControllerApiSpec`.
+
+---
+
 ## 3-2.5 패키지 가시성 규약
 
 `*.persistence` 하위는 **전부 package-private**.
