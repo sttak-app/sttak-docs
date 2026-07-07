@@ -177,6 +177,105 @@ com.sttak.sttakexternal.<context>/
 
 ---
 
+## 3-2.4.2 Lombok 사용 규약
+
+필드 접근자·생성자를 손으로 쓰지 않고 Lombok 으로 대체할 수 있는 경우엔 **항상 Lombok 을 쓴다.**
+목적은 코드 반복 제거와 리뷰 시야 확보다. 아래 규약은 위 §3-2.4.1 의 네이밍/`@Setter` 금지 조항과 짝을 이룬다.
+
+### 3-2.4.2.1 기본 원칙
+
+1. **필드 → getter 는 클래스 레벨 `@Getter` 로만 노출한다.**
+    - 클래스의 모든 필드에 게터가 필요하면 클래스 레벨 `@Getter`.
+    - **일부 필드만 노출해야 할 때만 손으로 쓴 게터를 허용한다.** 필드 레벨 `@Getter` 는 쓰지 않는다 (선택적 노출은 손 게터가 더 명확).
+    - 그 외의 경우 `public T getFoo() { return foo; }` 형태의 손 게터는 새로 쓰지 않는다.
+2. **`@Setter` 는 어디에도 쓰지 않는다.** 도메인/JPA/DTO/Request 어느 쪽이든 상태 변경은 의미 있는 동사 메서드로만 (§3-2.4.1: `updateName(String name)`).
+3. **정적 팩토리 / 도메인 생성자를 대체하는 목적으로 `@AllArgsConstructor(access = PUBLIC)`, `@Builder` 를 쓰지 않는다.**
+    - 도메인 객체(Aggregate/VO)는 여전히 `private` 생성자 + `create` / `restore` 정적 팩토리 (`§3-2.5`, `§3-2.10`).
+    - `@Builder` 는 도메인 객체 안티패턴 (`§3-2.10` 표).
+4. **enum 파라미터의 반복 대입은 `@RequiredArgsConstructor` 로 없앤다.** 도메인 예외 enum(`<Context>Exception`) 처럼 `final` 필드만 담는 enum 은 아래 §3-2.4.2.3 참조.
+5. **JPA `*JpaEntity` / `@Embeddable` 은 클래스 레벨 `@Getter` 를 기본으로 한다** (아래 §3-2.4.2.2).
+    - 실제 인자 생성자(package-private)는 손으로 정의한다 — Lombok 생성자 애노테이션은 필드 순서·널 처리 요구사항과 자주 충돌하므로 사용하지 않는다.
+
+### 3-2.4.2.2 JPA `*JpaEntity` 표준 형태
+
+```java
+@Entity
+@Table(name = "…")
+@EntityListeners(AuditingEntityListener.class)   // 필요 시
+@Getter                                          // ◄ 모든 필드가 노출 대상이면 클래스 레벨
+class FooJpaEntity {                             // ◄ persistence 패키지는 package-private
+
+    @Id ...
+    private Long id;
+
+    // 필드 …
+
+    protected FooJpaEntity() {                   // ◄ JPA 요구 — 손으로 두거나 @NoArgsConstructor(access = PROTECTED)
+    }
+
+    FooJpaEntity(...) {                          // ◄ 상태 초기화 생성자 — 손으로 정의
+        ...
+    }
+
+    void updateXxx(...) {                        // ◄ 변경감지 — set 대신 동사
+        ...
+    }
+}
+```
+
+- `*JpaEntity` 는 `persistence` 패키지 안에서만 쓰이므로(§3-2.5) `@Getter` 가 만드는 `public` 게터라도 외부로 새지 않는다.
+- 일부 필드만 노출해야 한다면 클래스 레벨 `@Getter` 를 붙이지 말고 필요한 필드에 대해 손으로 게터를 정의한다. 예: 비밀번호 필드(`password`)를 게터 없이 유지하고 나머지만 노출해야 한다면 클래스 레벨 `@Getter` 를 빼고 필요한 게터만 손으로 쓴다.
+- `Persistable<T>` 를 구현하는 엔티티도 클래스 레벨 `@Getter` 로 충분하다. 필드 `boolean isNew` 는 Lombok 이 `isNew()` 로 매핑해 `Persistable#isNew()` 를 그대로 만족한다. `@Override` 를 남기고 싶으면 손게터를 명시 정의해도 되지만, 기본은 `@Getter` 위임.
+
+### 3-2.4.2.3 도메인 예외 enum 표준 형태
+
+`<Context>Exception implements BaseException` 은 다음 하나의 형태로 통일한다.
+
+```java
+@Getter
+@RequiredArgsConstructor
+public enum FooException implements BaseException {
+
+    FOO_NOT_FOUND(ErrorType.NOT_FOUND, "…"),
+    …;
+
+    private final ErrorType errorType;
+    private final String message;
+}
+```
+
+- `BaseException` 은 `getErrorType()`·`getMessage()` 를 요구한다. 필드명 `errorType`·`message` 를 그대로 두면 `@Getter` 가 시그니처를 정확히 매치한다.
+- 생성자·손게터를 함께 유지하지 않는다 — Lombok 애노테이션 두 개로 충분.
+
+### 3-2.4.2.4 어디에 쓰고, 어디에 쓰지 않는가
+
+| 대상 | 게터 | 생성자 애노테이션 |
+| --- | --- | --- |
+| `*JpaEntity`, `@Embeddable` (전 필드 노출) | 클래스 레벨 `@Getter` | 실제 생성자는 손으로. 필요 시 `@NoArgsConstructor(access = PROTECTED)` 만. |
+| `*JpaEntity` 중 일부 필드만 노출 | 클래스 레벨 `@Getter` 없이 필요한 게터만 손으로 | 위와 동일 |
+| 도메인 예외 enum (`<Context>Exception`) | `@Getter` | `@RequiredArgsConstructor` |
+| 도메인 Aggregate/VO/1차 컬렉션 | 전 필드면 `@Getter`, 부분 노출이면 손 게터 | 애노테이션 금지 — `private` 생성자 + 정적 팩토리 (§3-2.5) |
+| Application `<Action>Command` / `<Context>Result` | (record 이므로 불필요) | (record) |
+| HTTP `<Action><Object>Request` / `<Action><Object>Response` | (record 우선) — 클래스라면 `@Getter` | `@AllArgsConstructor` 대신 정적 팩토리(`from(...)`) |
+| Spring `@ConfigurationProperties` / Adapter 내부 상태 | 필요 시 `@Getter` | `@RequiredArgsConstructor` 로 의존성 주입 |
+
+**금지 조합**
+
+- `@Setter` (모든 곳)
+- 도메인 객체에 `@Builder` (§3-2.10)
+- 전 필드 노출이 필요한데도 게터를 손으로 다시 쓰기 (`public T getFoo() { return foo; }`)
+- 필드 레벨 `@Getter` — 부분 노출이 필요하면 손 게터로 명시.
+- `@Data`, `@Value` — 도메인/JPA/DTO 모두 필요 이상으로 노출되므로 쓰지 않는다.
+
+### 3-2.4.2.5 리뷰 체크리스트
+
+- [ ] 새로 추가한 클래스에 `public T getX() { return x; }` 형태의 손 게터가 있는가? → 전 필드 노출이면 클래스 레벨 `@Getter` 로 치환. 부분 노출이면 그대로 유지.
+- [ ] enum 안에 반복적인 `this.foo = foo` 대입 생성자가 있는가? → `@RequiredArgsConstructor`.
+- [ ] `*JpaEntity` 에 `@Getter` 가 빠져 있는가? → 전 필드 노출이면 추가. 아니라면 필요한 손 게터만 남긴다.
+- [ ] `@Setter` / `@Data` / `@Builder`(도메인) / 필드 레벨 `@Getter` 가 들어왔는가? → 리뷰 거절.
+
+---
+
 ## 3-2.5 패키지 가시성 규약
 
 `*.persistence` 하위는 **전부 package-private**.
