@@ -282,6 +282,15 @@ Controller 의 Swagger 어노테이션은 `<Controller>ApiSpec` 인터페이스�
 
 ---
 
+## 3-2.4.4 Request → Command 변환 지점
+
+Controller 는 HTTP 입력 DTO(`<Action><Object>Request`) 를 Application 입력(`<Action>Command` record) 으로 변환한 뒤 Service 에 넘긴다. 변환 메서드는 Request 에 정의된 `toCommand()` 로 통일한다 (§3-1.6.1 요청 흐름 참조).
+
+- Service 시그니처는 `<Action>Command` 만 받는다. `Request` 를 Service 로 넘기지 않는다.
+- 조회 흐름에서 path/query 파라미터 몇 개만 넘길 때는 Command 를 강요하지 않는다 (§3-1.6.2).
+
+---
+
 ## 3-2.5 패키지 가시성 규약
 
 `*.persistence` 하위는 **전부 package-private**.
