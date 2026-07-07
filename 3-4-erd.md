@@ -1,4 +1,4 @@
-# 3-4. ERD (Entity-Relationship Diagram) — sTTak 백엔드
+ # 3-4. ERD (Entity-Relationship Diagram) — sTTak 백엔드
 
 본 문서는 sTTak 백엔드의 **데이터 모델 초안(ERD)** 을 정리한다.
 도메인 구현을 시작하기 전 합의해야 할 테이블/컬럼/관계의 출발점이며,
@@ -57,11 +57,14 @@
 
 ### 3-4.2.2 시장/종목
 
-- `Market` — PK `market_id`, `country_code`, `currency_code`, `market_name`, `market_code`
-- `MarketSessions` — PK `session_id`, `market_id*` → `Market`, `session_type`, `open_time`, `close_time`, `tradable`
-- `Stock` — PK `stokc_id`, `market_id2*` → `Market.market_id`, `stock_code`, `stock_name`, `listed_date`, `stock_status`
-- `Sector` — PK `sector_id`, `sector_name`
-- `Stock_Sector` — PK `stock_sector_id`, `stokc_id*` → `Stock`, `sector_id2*` → `Sector` (M:N 매핑 테이블)
+> **SCRUM-51 구현**: 복수형 `stocks`(ADR-009). **종목 마스터는 data.go.kr 금융위 KRX상장종목정보(`15094775`)로 동기화**([ADR-010](../decisions/ADR-010-market-data-source-datagokr.md)) — `stock_code`(단축코드)·`stock_name`·**`market_id`*(→`markets` FK)**·`isin_code`·`is_active`. **MVP 대상은 큐레이션 10종목**(삼성전자 005930, SK하이닉스 000660, 현대차 005380, SK스퀘어 402340, 삼성바이오로직스 207940, 삼성물산 028260, 삼성생명 032830, 한화에어로스페이스 012450, 현대모비스 012330, 한미반도체 042700).
+> `Market`/`MarketSessions`(복수형 `markets`/`market_sessions`)는 **API에 없는 정적 참조데이터라 수동 시드**(V4): 시장 KOSPI/KOSDAQ/KONEX(KR/KRW), 정규장 세션 09:00~15:30. `stocks.market`(문자열)은 **`market_id` FK 로 전환**(V4).
+
+- `Market` (구현 `markets`) — PK `market_id`, `market_code`(자연 유일키)·`market_name`·`country_code`·`currency_code`. 수동 시드.
+- `MarketSessions` (구현 `market_sessions`) — PK `session_id`, `market_id*` → `markets`, `session_type`, `open_time`, `close_time`, `tradable`. `UNIQUE(market_id, session_type)`.
+- `Stock` (구현 `stocks`) — PK `stock_id`, `market_id*` → `markets.market_id`, `stock_code`, `stock_name`, `isin_code`, `is_active` (`listed_date`/`stock_status`는 미도입).
+- `Sector` — PK `sector_id`, `sector_name` — **SCRUM-51 구현(`sectors`): GICS 11섹터 자체 taxonomy 수동 시드([ADR-012](../decisions/ADR-012-sector-classification.md)). `sector_code`·`description` 추가.**
+- `Stock_Sector` — PK `stock_sector_id`, `stokc_id*` → `Stock`, `sector_id2*` → `Sector` (M:N 매핑 테이블) — **구현(`stock_sectors`): `UNIQUE(stock_id, sector_id)`. 복합/지주 기업은 복수 섹터(예: SK스퀘어=IT+금융, 삼성물산=산업재+경기소비재).**
 
 관계:
 
@@ -71,15 +74,17 @@
 
 ### 3-4.2.3 주문/보유/관심
 
+> **모의투자 체결 모델([ADR-011](../decisions/ADR-011-mock-trade-execution-model.md))**: `order_status` 는 `PENDING`(접수) → `FILLED`(체결)/`REJECTED`(잔고·수량 미달) 흐름. 체결가(`order_price`)는 **매수=주문일(D) 시가 / 매도=주문일(D) 종가**로, D의 일봉이 도착하는 **다음 영업일 배치에서 정산**된다. 체결일(예: `filled_date`) 컬럼이 필요.
+
 - `Order` — PK `order_id`, `acount_id*` → `Account`, `stokc_id*` → `Stock`, `order_side`(ENUM), `order_price`, `order_quantity`, `order_status`(ENUM), `order_at`
 - `Holdings` — PK `holdings_id`, `acount_id*` → `Account`, `stokc_id*` → `Stock`, `quantity`, `average_price`, `total_buy_amount`
-- `Watchlist` — PK `watchlist_id`, `id2*` → `User.id`, `stokc_id*` → `Stock`, `is_deleted`, `deleted_at` (soft delete)
+- `Watchlist` — PK `watchlist_id`, `id2*` → `users.id`, `stokc_id*` → `Stock`, `is_deleted`, `deleted_at` (soft delete)
 
 관계:
 
 - `Account 1 ──< N Order`, `Account 1 ──< N Holdings`
 - `Stock 1 ──< N Order`, `Stock 1 ──< N Holdings`, `Stock 1 ──< N Watchlist`
-- `User 1 ──< N Watchlist`
+- `users 1 ──< N Watchlist`
 
 ### 3-4.2.4 주문 회고
 
@@ -95,6 +100,8 @@
 - `OrderReview 1 ──< N ReasonEvaluation`, `OrderReason 1 ──< N ReasonEvaluation`
 
 ### 3-4.2.5 차트/시그널
+
+> **SCRUM-51 계획**: `Stock_Candle` 은 복수형 `stock_candles`(ADR-009)로 구현 예정. **일봉(`candle_type='1D'`)만 수집**하며 소스는 data.go.kr 금융위 주식시세정보(`15094808`)([ADR-010](../decisions/ADR-010-market-data-source-datagokr.md)). 컬럼: `stock_id*`→`stocks`, `candle_type`, `market_date`, `open_price`/`high_price`/`low_price`/`close_price`/`volume`, `UNIQUE(stock_id, candle_type, market_date)`. 주봉/월봉은 향후 일봉 집계로 파생. 이 일봉이 모의투자 체결 정산 트리거([ADR-011](../decisions/ADR-011-mock-trade-execution-model.md)).
 
 - `Stock_Candle` — PK `candle_id`, `stokc_id*` → `Stock`, OHLCV(`open`/`high`/`low`/`close`/`volume`), `market_date`
 - `Chart_Terms` — PK `chart_term_id`, `term_name`(ENUM), `easy_meaning`, `detail_meaning`
@@ -135,11 +142,11 @@
 ### 3-4.2.7 퀴즈
 
 - `Quiz` — PK `quiz_id`, `quiz_content`, `choice_a/b/c/d`, `correct_choice`(INT), `explanation`, `point`
-- `Quiz_User` — PK `quiz_user_id`, `id*` → `User.id`, `quiz_id*` → `Quiz`, `start_at`, `end_at`, `is_solved`(ENUM), `selected_choice`
+- `Quiz_User` — PK `quiz_user_id`, `id*` → `users.id`, `quiz_id*` → `Quiz`, `start_at`, `end_at`, `is_solved`(ENUM), `selected_choice`
 
 관계:
 
-- `User N >──< N Quiz` (via `Quiz_User`)
+- `users N >──< N Quiz` (via `Quiz_User`)
 
 ### 3-4.2.8 챗봇
 
@@ -150,9 +157,9 @@
 ## 3-4.3 카디널리티 한눈에 보기
 
 ```
-                ┌──────┐
-                │ User │
-                └──┬───┘
+                ┌───────┐
+                │ users │
+                └───┬───┘
                    │ 1
         ┌──────────┼────────────────────────────────────────────┐
         │ N        │ N                                          │ N
@@ -189,6 +196,8 @@
 ## 3-4.4 원본 DDL (Draft v1)
 
 ERDCloud에서 추출된 초안을 원본 그대로 보존한다. 타이포·길이 누락·FK 부재는 §3-4.5 에서 추적한다.
+
+> **사용자 테이블명 정합 (ADR-002):** 본 v1 원본 DDL 의 `CREATE TABLE `User`` / `ALTER TABLE `User`` 는 보존하지만, v2 부터는 `users` 로 정합되어 있다. 본 문서의 §3-4.1 / §3-4.2 / §3-4.5 본문은 이미 `users` 기준이다. PostgreSQL 예약어 `USER` 와의 충돌이 채택 사유 — `docs/decisions/ADR-002-user-table-naming.md` 참조.
 
 ```sql
 CREATE TABLE `ChatBot` (
@@ -476,8 +485,8 @@ v2 DDL을 만들 때 일괄 반영한다.
 
 ### D. 길이/타입 누락
 
-- `VARCHAR` 길이가 비어 있는 컬럼이 다수 (`User.email`, `User.password`, `User.phone_number`, `Market.market_name`, `Market.market_code`, `Stock.stock_code`, `Stock.stock_name`, `ReasonTemplate.reason_label`, `News.easy_content`, `News.source_name`, `ReasonEvaluation.model_name`) — MySQL에서는 길이 지정이 필요하다.
-- `User.role`, `Market.country_code`, `Market.currency_code` 가 소문자 `enum` 으로 적혀 있음 — `ENUM(...)` 으로 정의 필요.
+- `VARCHAR` 길이가 비어 있는 컬럼이 다수 (`users.email`, `users.password`, `users.phone_number`, `Market.market_name`, `Market.market_code`, `Stock.stock_code`, `Stock.stock_name`, `ReasonTemplate.reason_label`, `News.easy_content`, `News.source_name`, `ReasonEvaluation.model_name`) — MySQL에서는 길이 지정이 필요하다.
+- `users.role`, `Market.country_code`, `Market.currency_code` 가 소문자 `enum` 으로 적혀 있음 — `ENUM(...)` 으로 정의 필요.
 - `News.easy_content` 가 `VARCHAR` 인데, 의미상 가변 길이 본문이라면 `TEXT`가 적합.
 
 ### E. Enum 값 목록 미정
@@ -486,7 +495,7 @@ v2 DDL을 만들 때 일괄 반영한다.
 
 | 테이블 | 컬럼 | 추정 값(예시) |
 | --- | --- | --- |
-| `User` | `role` | `USER`, `ADMIN` |
+| `users` | `role` | `USER`, `ADMIN` |
 | `Order` | `order_side` | `BUY`, `SELL` |
 | `Order` | `order_status` | `PENDING`, `FILLED`, `CANCELLED`, … |
 | `Account` | `account_status` | `ACTIVE`, `CLOSED`, … |
@@ -505,7 +514,7 @@ v2 DDL을 만들 때 일괄 반영한다.
 
 - 현재 DDL에는 FK CONSTRAINT가 단 하나도 없다. §3-4.2 의 관계 표를 근거로 일괄 추가.
 - 자연 유일성 제약 후보:
-  - `User.email` UNIQUE
+  - `users.email` UNIQUE
   - `Account(id, account_status='ACTIVE')` 부분 유니크 — 사용자별 활성 계좌 정책에 따라
   - `Stock(market_id, stock_code)` UNIQUE
   - `Stock_Candle(stock_id, market_date, ...)` UNIQUE (캔들 중복 방지)
@@ -518,7 +527,7 @@ v2 DDL을 만들 때 일괄 반영한다.
 
 ### G. 시점/숫자 표현
 
-- `User`/`Account.created_at` 만 `timestamp`, 나머지는 `DATETIME`. 한 가지로 통일 권장 (JPA Auditing 적용 시 `TIMESTAMP WITH TIME ZONE` 또는 `DATETIME(6)` 일관 사용).
+- `users`/`Account.created_at` 만 `timestamp`, 나머지는 `DATETIME`. 한 가지로 통일 권장 (JPA Auditing 적용 시 `TIMESTAMP WITH TIME ZONE` 또는 `DATETIME(6)` 일관 사용).
 - `OrderReview.profit_loss_rate DECIMAL(19,0)` — 비율인데 소수점이 없다. `DECIMAL(7,4)` (예: `-99.9999` ~ `999.9999`) 등으로 재검토.
 - `OrderReview.proofit_loss_amount DECIMAL(7,4)` — 금액인데 정밀도가 작다. `DECIMAL(19,0)` 또는 통화 단위에 맞춘 값으로 재검토 (위의 rate와 정의가 뒤바뀐 것으로 보임).
 

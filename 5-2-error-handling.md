@@ -212,10 +212,11 @@ if (watchlist.size() >= MAX_SIZE) {
 | Trade | 잔고 부족 | 409 CONFLICT | "현금 잔고가 부족합니다." |
 | Trade | 음수 수량 | 400 VALIDATION | "수량은 1 이상이어야 합니다." |
 | Trade | 미지원 종목 | 404 NOT_FOUND | "지원하지 않는 종목입니다." |
-| Quiz | 미존재 세트 | 404 NOT_FOUND | "퀴즈를 찾을 수 없습니다." |
-| Quiz | 만료된 세트 채점 | 409 CONFLICT | "퀴즈 제출 시간이 지났습니다." |
-| Quiz | 이미 채점된 세트 | 409 CONFLICT | "이미 채점된 퀴즈입니다." |
-| Quiz | 쿨다운 중 새 세트 요청 | 200 OK (응답 본문에 `nextAvailableAt`) | "다음 퀴즈는 …후에 받을 수 있어요." |
+| Quiz | 미존재 문항 채점 | 404 NOT_FOUND | "퀴즈를 찾을 수 없습니다." |
+| Quiz | 쿨다운 중 응답 제출 (`POST /quizzes/{quizId}/submit`) | 409 CONFLICT | "다음 퀴즈는 쿨다운 후 응시할 수 있습니다." |
+| Quiz | 이미 응답한 문항 재제출 | 409 CONFLICT | "이미 응시한 퀴즈입니다." |
+| Quiz | 쿨다운 중 다음 문항 조회 (`GET /quizzes/next`) | 200 OK (응답 본문에 `cooldown=true`, `nextAvailableAt`) | "다음 퀴즈는 …후에 받을 수 있어요." |
+| Quiz | 풀에 남은 미응시 문항 0개 | 409 CONFLICT | "응시 가능한 퀴즈가 없습니다." |
 | News | 미존재 뉴스 | 404 NOT_FOUND | "뉴스를 찾을 수 없습니다." |
 | Chat | 미지원 mode | 400 VALIDATION | "지원하지 않는 모드입니다." |
 | 외부 의존 | LLM 어댑터 서킷 OPEN + 폴백 불가 | 503 (메시지로 안내) | "지금은 답변을 드리기 어려워요. 잠시 후 다시 시도해주세요." |
