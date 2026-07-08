@@ -148,9 +148,27 @@
 
 - `users N >──< N Quiz` (via `Quiz_User`)
 
-### 3-4.2.8 챗봇
+### 3-4.2.8 챗봇 / RAG 지식 저장소
 
-- `ChatBot` — PK `Key` (VARCHAR(255)) — 현재 컬럼 1개만 정의된 스텁. 설계 미완.
+> **SCRUM-42 (V9__chat_knowledge.sql, ADR-016/017/018)** — 기존 `ChatBot` 스텁은 폐기한다.
+> 챗 세션/메시지는 **저장하지 않는다**(클라이언트가 전체 히스토리를 매 호출 전달, apidocs §7).
+> 대신 RAG 지식 저장소 2 테이블을 둔다.
+
+- `term` — PK `id`(BIGSERIAL), `term_name` VARCHAR(200) **UNIQUE**, `term_meaning` TEXT, `created_at` TIMESTAMPTZ
+  - 일반 경제/투자 용어 사전(§3-4.2.6 의 `term` 을 구체화). `news_term` 의 distinct (term, definition) 쌍을
+    배치가 upsert 로 승격한다(ON CONFLICT DO NOTHING).
+  - 인덱스: `idx_term_name_trgm` — GIN(`term_name gin_trgm_ops`), 질문 속 용어 exact-ish 매칭용(ADR-016).
+- `knowledge_chunk` — PK `id`(BIGSERIAL), `source_type` VARCHAR(20)(`NEWS`|`TERM`), `source_id` BIGINT,
+  `content` TEXT, `stock_codes` TEXT[], `published_at` TIMESTAMPTZ, `embedding` **vector(1536)**, `embedded_at`
+  - **UNIQUE (source_type, source_id)** — 1뉴스=1청크·1용어=1청크(ADR-018), 임베딩 배치 멱등 키.
+  - 인덱스: `idx_knowledge_chunk_embedding` — HNSW(`vector_cosine_ops`), `idx_knowledge_chunk_stock` — GIN(`stock_codes`).
+  - `source_id` 는 논리 참조(뉴스/용어 두 테이블을 가리켜 FK 미설정). **JPA 미매핑** — `vector`/`TEXT[]` 는
+    JdbcClient 네이티브 SQL 로만 접근한다(ADR-017).
+
+관계:
+
+- `knowledge_chunk N ──> 1 News` (source_type=NEWS, 논리 참조)
+- `knowledge_chunk N ──> 1 term` (source_type=TERM, 논리 참조)
 
 ---
 
