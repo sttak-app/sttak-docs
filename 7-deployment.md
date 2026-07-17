@@ -254,10 +254,17 @@ application.yml            (공통)
 
 ### 7.8.3 batch
 
-- **상시 Fargate 서비스**(`desired_count=1`, ALB 없음)로 배포 *(ADR-006)*. 앱이 in-process `@Scheduled`(`@EnableScheduling`)로 cron 을 돌리므로, 주기마다 컨테이너를 새로 띄우는 ECS Scheduled Task 모델 대신 상시 실행한다.
+- **상시 Fargate 서비스**(`desired_count=1`, ALB 없음)로 배포 *(ADR-006)*. 뉴스/임베딩 파이프라인이 in-process `@Scheduled`(`@EnableScheduling`)로 cron 을 돌리므로, 주기마다 컨테이너를 새로 띄우는 ECS Scheduled Task 모델 대신 상시 실행한다.
 - 동시 실행 방지(`max concurrent: 1`): **인스턴스 1개 = 스케줄러 1개**로 중첩을 원천 차단. 2개 이상으로 스케일 시 분산 락 필요(후속 ADR).
 - 배포 동작은 api/admin 과 동일(새 task def revision 등록 → `update-service` rolling).
 - > 진짜 Scheduled Task(필요 시에만 실행, 비용↓)로 전환하려면 batch 를 "부팅 → 잡 1회 → 종료"로 재설계해야 한다 *(ADR-006 Consequences)*.
+
+#### 7.8.3.1 주가 수집 잡 — Jenkins 트리거 1회 실행 *(ADR-019)*
+
+- **주가 일봉 수집은 상시 스케줄이 아니라 Jenkins 가 트리거하는 1회 실행 프로세스**다. 같은 batch 이미지를 쓰되 `--run-stock-daily` / `--run-stock-backfill [--backfill-days=N]` 인자로 기동 → 잡 1회 실행 → 종료코드 회신 후 종료. 상시 batch 서비스에는 주가 수집 크론이 **없다** — `@Scheduled` 는 뉴스/임베딩 전용.
+- 트리거 모드(`--run-stock-*`)로 기동된 프로세스는 **뉴스/임베딩 `@Scheduled` 를 자동으로 끈다**(`sttak.scheduling.enabled=false` 기본 적용) — 1회 실행이 크론 시각(정각/30분/45분)을 넘겨도 상시 서비스와 같은 잡이 중첩 발화하지 않는다. §7.8.3 의 "인스턴스 1개 = 스케줄러 1개" 불변식은 트리거 모드에서도 유지된다.
+- 종료코드 계약: `0`(수집 성공/당일 이미 완료) · `42`(정상, 신규 데이터 미도착 — 실패 아님) · `1`(실패).
+- Jenkins 스케줄: 데일리 `0 13-23 * * 1-5`(매시 폴링 — 수집 성공 후 확인 라운드 1회를 거쳐 신규 0건이 확인되면 이후 회차는 NOOP, ADR-019 §5), 23:30 상태 리포트(최종 캔들 5일 이상 오래됐을 때만 경보 격상), 백필은 크론 없는 파라미터 빌드. 파이프라인 정의는 `jenkins/` 디렉터리 참조.
 
 ---
 
