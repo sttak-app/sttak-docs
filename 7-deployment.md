@@ -220,6 +220,7 @@ application.yml            (공통)
 | `DART_API_KEY` | DART | dev/prod (Secrets Manager) |
 | `DATA_GO_KR_SERVICE_KEY` | data.go.kr 금융위 시세·종목 API 인증키 (ADR-010) | dev/prod (Secrets Manager) |
 | `LOG_LEVEL_ROOT` | 로그 레벨 | 선택 (기본 INFO) |
+| `SENTRY_DSN` | Sentry 에러 트래킹 DSN (ADR-020). 미주입 시 SDK no-op | dev/prod (Secrets Manager `sttak/<env>/sentry:dsn`) |
 | `JAVA_OPTS` | JVM 옵션 | 선택 |
 
 ---
