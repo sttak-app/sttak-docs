@@ -101,7 +101,7 @@
 
 ### 3-4.2.5 차트/시그널
 
-> **구현됨 (V2·V12·V13 — SCRUM-51/31, [ADR-019](../decisions/ADR-019-chart-signal-server-ssot.md)).**
+> **구현됨 (V2·V12·V13 — SCRUM-51/31, [ADR-020](../decisions/ADR-020-chart-signal-server-ssot.md)).**
 > 신호 감지·기록은 서버 SSOT — 배치(SCRUM-61 잡 후속 스텝)가 규칙 기반으로 감지·적재하고 API 는 읽기만 한다.
 > 지표 곡선(오버레이)은 iOS 온디바이스 계산 유지, AI 해설 생성(LLM)은 별도 배치(SCRUM-65)가 채운다.
 
