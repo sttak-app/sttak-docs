@@ -101,19 +101,21 @@
 
 ### 3-4.2.5 차트/시그널
 
-> **SCRUM-51 계획**: `Stock_Candle` 은 복수형 `stock_candles`(ADR-009)로 구현 예정. **일봉(`candle_type='1D'`)만 수집**하며 소스는 data.go.kr 금융위 주식시세정보(`15094808`)([ADR-010](../decisions/ADR-010-market-data-source-datagokr.md)). 컬럼: `stock_id*`→`stocks`, `candle_type`, `market_date`, `open_price`/`high_price`/`low_price`/`close_price`/`volume`, `UNIQUE(stock_id, candle_type, market_date)`. 주봉/월봉은 향후 일봉 집계로 파생. 이 일봉이 모의투자 체결 정산 트리거([ADR-011](../decisions/ADR-011-mock-trade-execution-model.md)).
+> **구현됨 (V2·V12·V13 — SCRUM-51/31, [ADR-020](../decisions/ADR-020-chart-signal-server-ssot.md)).**
+> 신호 감지·기록은 서버 SSOT — 배치(SCRUM-61 잡 후속 스텝)가 규칙 기반으로 감지·적재하고 API 는 읽기만 한다.
+> 지표 곡선(오버레이)은 iOS 온디바이스 계산 유지, AI 해설 생성(LLM)은 별도 배치(SCRUM-65)가 채운다.
 
-- `Stock_Candle` — PK `candle_id`, `stokc_id*` → `Stock`, OHLCV(`open`/`high`/`low`/`close`/`volume`), `market_date`
-- `Chart_Terms` — PK `chart_term_id`, `term_name`(ENUM), `easy_meaning`, `detail_meaning`
-- `Stock_Chart_Signals` — PK `chart_signal_id`, `candle_id*` → `Stock_Candle`, `chart_term_id*` → `Chart_Terms` (특정 캔들에 어떤 차트 용어가 잡혔는지)
-- `Chart_Signal_Explanations` — PK `chart_signal_explanation_id`, `chart_signal_id*` → `Stock_Chart_Signals`, `exlpanation`, `Field`
+- `stock_candles` (V2, SCRUM-51) — PK `candle_id`, `stock_id*` → `stocks`, `candle_type`(`'1D'`만, [ADR-010](../decisions/ADR-010-market-data-source-datagokr.md)), `market_date`, `open_price`/`high_price`/`low_price`/`close_price`/`volume`, `UNIQUE(stock_id, candle_type, market_date)`. 주봉/월봉은 향후 일봉 집계로 파생. 이 일봉이 모의투자 체결 정산 트리거([ADR-011](../decisions/ADR-011-mock-trade-execution-model.md))이자 신호 감지 트리거.
+- `chart_terms` (V12) — PK `chart_term_id`, `term_code` VARCHAR **UNIQUE**(`MA`/`RSI`/`BOLLINGER`/`SUPPORT`/`VOLUME`/`INFO` 6종 수동 시드), `term_name`, `easy_meaning`, `detail_meaning` (초안 `term_name` ENUM → `term_code` 자연키로 정리)
+- `stock_chart_signals` (V12·V13) — PK `chart_signal_id`, `candle_id*` → `stock_candles`, `chart_term_id*` → `chart_terms`, `signal_kind` VARCHAR+CHECK(8종: 골든/데드크로스·RSI 과열/과매도·볼린저 상/하단 터치·지지 반등/저항 눌림), `subsequent_direction` VARCHAR+CHECK(`UP`/`DOWN`/`SIDEWAYS`, V13 — 신호 후 +7거래일 ±1.5% 기준), **`UNIQUE(candle_id, signal_kind)`** — 배치 멱등 upsert 키
+- `chart_signal_explanations` (V12) — PK `chart_signal_explanation_id`, `chart_signal_id*` → `stock_chart_signals` **UNIQUE**(신호당 해설 1건), `explanation` TEXT(초안 오타 `exlpanation` 정정, 모호한 `Field` 컬럼 제거), `model_name`(생성 모델 기록)
 
 관계:
 
-- `Stock 1 ──< N Stock_Candle`
-- `Stock_Candle 1 ──< N Stock_Chart_Signals`
-- `Chart_Terms 1 ──< N Stock_Chart_Signals`
-- `Stock_Chart_Signals 1 ──< N Chart_Signal_Explanations`
+- `stocks 1 ──< N stock_candles`
+- `stock_candles 1 ──< N stock_chart_signals` (캔들당 신호 종류별 최대 1건)
+- `chart_terms 1 ──< N stock_chart_signals`
+- `stock_chart_signals 1 ── 0..1 chart_signal_explanations` (해설은 SCRUM-65 배치가 생성 — 미생성이면 API 가 null 반환)
 
 ### 3-4.2.6 뉴스/용어
 
