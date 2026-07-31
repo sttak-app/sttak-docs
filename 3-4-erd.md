@@ -74,17 +74,21 @@
 
 ### 3-4.2.3 주문/보유/관심
 
-> **모의투자 체결 모델([ADR-011](../decisions/ADR-011-mock-trade-execution-model.md))**: `order_status` 는 `PENDING`(접수) → `FILLED`(체결)/`REJECTED`(잔고·수량 미달) 흐름. 체결가(`order_price`)는 **매수=주문일(D) 시가 / 매도=주문일(D) 종가**로, D의 일봉이 도착하는 **다음 영업일 배치에서 정산**된다. 체결일(예: `filled_date`) 컬럼이 필요.
+> **구현됨 (V14 — SCRUM-32, [ADR-011](../decisions/ADR-011-mock-trade-execution-model.md) 접수·익일 정산 모델).**
+> `order_status` 는 `PENDING`(접수) → `FILLED`(정산 체결) / `REJECTED`(최종 검증 미달, 사유 기록) / `CANCELLED`(사용자 취소 — 행 삭제 아님) 흐름.
+> 체결가는 **매수=D 시가 / 매도=D 종가**, 정산은 별도 배치 잡(`tradeSettlementJob`, `--run-trade-settlement`)이 수행 —
+> D 캔들 결측(공휴일·거래정지)은 이후 첫 캔들로 재귀속되며 그때까지 PENDING 유지. 초안의 `order_reasons` 는 MVP 제외
+> (템플릿 선택도 텍스트로 `orders.rationale` 에 저장), 회고/근거평가는 AI 회고 티켓으로 이동.
 
-- `Order` — PK `order_id`, `acount_id*` → `Account`, `stokc_id*` → `Stock`, `order_side`(ENUM), `order_price`, `order_quantity`, `order_status`(ENUM), `order_at`
-- `Holdings` — PK `holdings_id`, `acount_id*` → `Account`, `stokc_id*` → `Stock`, `quantity`, `average_price`, `total_buy_amount`
-- `Watchlist` — PK `watchlist_id`, `id2*` → `users.id`, `stokc_id*` → `Stock`, `is_deleted`, `deleted_at` (soft delete)
+- `orders` (V14) — PK `order_id`, `account_id*` → `accounts`, `stock_id*` → `stocks`(오타 정정), `order_side`(BUY|SELL), `quantity`(>0 CHECK), `rationale`(140), `order_status`(4종 CHECK), `trading_date`(체결 기준일 D — 주말 접수는 다음 영업일 귀속), `reference_price`(접수 시점 참고가), `filled_price`/`filled_at`, `rejected_reason`, `realized_profit`(매도 FILLED 만), `ordered_at`. 인덱스: `(account_id, ordered_at DESC)` 거래내역, `(order_status, trading_date)` 정산 스캔.
+- `holdings` (V14) — PK `holdings_id`, `account_id*`·`stock_id*`, `quantity`(≥0 CHECK — 공매도 금지, 전량 매도 시 0 행 유지), `average_price`(가중평균·정수 절사는 도메인 소유), `total_buy_amount`, **`UNIQUE(account_id, stock_id)`** — 정산 upsert 키.
+- `reason_templates` (V14) — PK `reason_template_id`, `reason_type`(BUY|SELL), `reason_label`, `UNIQUE(reason_type, reason_label)`. iOS presets 문구 6건 수동 시드(고정 동기화).
+- `member_watchlist` (V10, 초안 `Watchlist`) — 기구현. 초안의 soft delete 정책 등은 V10 구현 기준.
 
 관계:
 
-- `Account 1 ──< N Order`, `Account 1 ──< N Holdings`
-- `Stock 1 ──< N Order`, `Stock 1 ──< N Holdings`, `Stock 1 ──< N Watchlist`
-- `users 1 ──< N Watchlist`
+- `accounts 1 ──< N orders`, `accounts 1 ──< N holdings` (계좌×종목당 1행)
+- `stocks 1 ──< N orders`, `stocks 1 ──< N holdings`
 
 ### 3-4.2.4 주문 회고
 
