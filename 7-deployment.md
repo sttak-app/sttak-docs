@@ -180,7 +180,7 @@ push(main)    ─► deploy-prod.yml (manual approval)          ← 다음 단�
 
 ### 7.6.1 Spring 프로파일
 
-- `local` — 개발자 PC. H2 + show-sql + devtools.
+- `local` — 개발자 PC. 로컬 Postgres(localhost) + show-sql. 비밀은 `.env`(§7.12)로 주입.
 - `dev` — 통합 검증.
 - `prod` — 실 서비스.
 
@@ -189,19 +189,20 @@ push(main)    ─► deploy-prod.yml (manual approval)          ← 다음 단�
 ### 7.6.2 설정 우선순위
 
 ```
-환경변수 (ECS Task Definition / .env)
+환경변수  (dev/prod: ECS Task Definition ← Secrets Manager / local: .env → IDE env file 또는 source)
       │
       ▼
-application-<profile>.yml  (in classpath)
+application-<profile>.yml  (in classpath, self-contained)
       │
       ▼
-application.yml            (공통)
+application.yml            (공통: 앱 이름 + 기본 프로파일 active: local)
 ```
 
 규약:
 
-- **모든 비밀은 환경변수**. yml 파일에는 빌드 시점에 알려진 비-비밀 값만.
-- `application-local.yml`의 `password`처럼 평문 비밀이 들어간 파일은 **운영 이미지에 포함되지 않도록** 한다.
+- **프로파일별 파일 완전 분리(self-contained)** — `application-dev.yml`/`application-local.yml` 각각이 그 환경 설정을 전부 담는다(ADR-021). `application.yml` 은 앱 이름과 기본 프로파일만.
+- **모든 비밀은 환경변수**. yml 에는 `${ENV_VAR}` placeholder 만 두고 실제 비밀값은 넣지 않는다 → `application-local.yml` 도 비밀이 없어 **커밋한다**.
+- **로컬 비밀 주입**: `.env`(gitignore) 에 값을 두고 IntelliJ 실행 구성의 env file 로 지정하거나 터미널에서 `source` 한다. 커밋되는 템플릿은 `.env.example`. 상세 §7.12.
 
 ### 7.6.3 환경 변수 카탈로그 (요약)
 
@@ -210,7 +211,7 @@ application.yml            (공통)
 | `SPRING_PROFILES_ACTIVE` | 프로파일 | 모두 |
 | `SPRING_DATASOURCE_URL` | JDBC URL | dev/prod |
 | `SPRING_DATASOURCE_USERNAME` / `_PASSWORD` | DB 자격 | dev/prod (Secrets Manager) |
-| `JWT_SIGNING_KEY` | JWT 서명 키 | dev/prod (Secrets Manager) |
+| `JWT_SECRET` | JWT 서명 키 (HS256, ADR-005) | dev/prod (Secrets Manager) · local(선택, 기본 더미) |
 | `AI_PROVIDER` | 뉴스 AI 가공 제공자 선택: `anthropic`(기본)\|`openai` (ADR-004) | 선택 |
 | `ANTHROPIC_API_KEY` | Claude LLM (뉴스 AI 가공, `AI_PROVIDER=anthropic`, Anthropic SDK 표준 변수명, ADR-003) | dev/prod (Secrets Manager) |
 | `OPENAI_API_KEY` | OpenAI LLM (뉴스 AI 가공 `AI_PROVIDER=openai`, ADR-004) + 임베딩 | dev/prod (Secrets Manager) |
@@ -221,14 +222,18 @@ application.yml            (공통)
 | `DATA_GO_KR_SERVICE_KEY` | data.go.kr 금융위 시세·종목 API 인증키 (ADR-010) | dev/prod (Secrets Manager) |
 | `LOG_LEVEL_ROOT` | 로그 레벨 | 선택 (기본 INFO) |
 | `SENTRY_DSN` | Sentry 에러 트래킹 DSN (ADR-020). 미주입 시 SDK no-op | dev/prod (Secrets Manager `sttak/<env>/sentry:dsn`) |
+| `REDIS_HOST` / `REDIS_PORT` | Refresh Token 저장소 Redis/ElastiCache (ADR-006, api) | dev/prod (Secrets Manager) · local(기본 `localhost:6379`) |
+| `GOOGLE_CLIENT_ID` / `APPLE_BUNDLE_ID` | 소셜 로그인 (ADR-008, api) | dev/prod · local(선택) |
 | `JAVA_OPTS` | JVM 옵션 | 선택 |
+
+> 로컬은 위 값을 **IntelliJ 실행 구성 환경변수**로 주입한다(§7.12). dev/prod 는 ECS Task Definition 이 Secrets Manager 에서 주입.
 
 ---
 
 ## 7.7 DB 마이그레이션
 
 - 도구: **Flyway** *(CON-O2)*. (Liquibase 도입 시 본 문서 갱신.)
-- > **현황(잠정)**: Flyway 는 **아직 미도입**(로드맵 §7.14 5단계). 그 전까지 `local`·`dev` 는 `spring.jpa.hibernate.ddl-auto=update` 로 스키마를 맞춘다. Flyway 도입 시 `ddl-auto` 를 `validate` 로 전환하고 아래 실행 시점 정책을 적용한다.
+- > **현황**: Flyway 도입 완료(마이그레이션 `V1~`). `local`·`dev`·`prod` 모두 `spring.jpa.hibernate.ddl-auto=validate` + Flyway 가 스키마를 소유한다(ADR-007, ADR-021). 로컬도 부팅 시 Flyway 가 마이그레이션을 적용한다(§7.12).
 - 위치: `sttak-domain/src/main/resources/db/migration/V<번호>__<설명>.sql`
 - 명명: `V1__init_user.sql`, `V2__add_trade.sql`. 한 번 커밋된 마이그레이션은 **수정 금지**.
 - 실행 시점:
@@ -298,26 +303,58 @@ application.yml            (공통)
 
 ## 7.12 로컬 실행 (개발자 빠른 시작)
 
-```bash
-# 1) Postgres 17 띄우기 (로컬)
-docker run -d --name sttak-pg \
-  -e POSTGRES_USER=dionisos198 \
-  -e POSTGRES_PASSWORD=haruka198^^ \
-  -e POSTGRES_DB=sttaklocal \
-  -p 5432:5432 \
-  postgres:17
+### 설정 구조 (프로파일별 파일)
 
-# 2) API 실행
-./gradlew :sttak-apps:sttak-api:bootRun
+각 앱은 프로파일별 파일로 완전 분리되어 있고, 로컬은 `local` 프로파일이 기본 활성화된다(`application.yml` 의 `spring.profiles.active: local`).
 
-# 3) 배치 실행 (선택)
-./gradlew :sttak-apps:sttak-batch:bootRun
-
-# 4) 전체 빌드 (테스트 + Jacoco)
-./gradlew build
+```
+application.yml         # 앱 이름 + 기본 프로파일(active: local)
+application-dev.yml     # dev 전체 (배포 시 SPRING_PROFILES_ACTIVE=dev 로 활성화)
+application-local.yml   # local 전체 (placeholder-only → 커밋됨)
 ```
 
-로컬 프로파일은 `application-local.yml`이 자동 활성화된다 (`spring.profiles.active: local`).
+`application-local.yml` 은 `${ENV_VAR:기본값}` placeholder 로만 채워져 비밀이 없으므로 커밋된다. 실제 비밀값은 아래처럼 주입한다(ADR-021).
+
+### 1) 로컬 인프라
+
+```bash
+# Postgres 17 + pgvector — RAG/임베딩용 vector 확장이 필요하다(일반 postgres:17 이미지엔 없음).
+docker run -d --name sttak-pg \
+  -e POSTGRES_USER=<로컬DB계정> \
+  -e POSTGRES_PASSWORD=<로컬DB비밀번호> \
+  -e POSTGRES_DB=sttaklocal \
+  -p 5432:5432 pgvector/pgvector:pg17
+
+# (선택) Redis 7 — api Refresh Token 저장소 (ADR-006)
+docker run -d --name sttak-redis -p 6379:6379 redis:7
+```
+
+> 앱 부팅 시 **Flyway 가 로컬 DB 에 마이그레이션(V1~)을 자동 적용**한다 — 로컬도 dev/prod 와 동일 스키마(`ddl-auto: validate`, ADR-021). `knowledge_chunk`·`quiz.embedding` 등 pgvector 객체는 마이그레이션에만 존재하므로 **pgvector 이미지가 필수**다(`CREATE EXTENSION` 은 위 도커 기본 슈퍼유저 계정으로 실행됨).
+> 데모 회원·계좌·퀴즈 시드는 Flyway 반복 마이그레이션 `db/seed/R__seed_demo`(멱등)로 **`local`·`dev` 에만** 적용된다(`spring.flyway.locations` 에 `classpath:db/seed` 포함). prod 는 제외.
+
+### 2) 비밀/환경변수 주입 — `.env`
+
+`.env.example` 을 복사해 `.env` 를 만들고 실제 값을 채운다(`.env` 는 `.gitignore`). 주입은 둘 중 하나:
+- **IntelliJ**: 실행 구성(Edit Configurations)에서 이 `.env` 를 env file 로 지정 — 최신 버전은 네이티브 지원, 구버전은 EnvFile 플러그인.
+- **터미널**: `set -a; source .env; set +a` (또는 direnv 로 자동화).
+
+`application-*.yml` 의 `${VAR}` placeholder 가 이 값으로 채워진다. 앱별 필요 변수(카탈로그는 `.env.example` / §7.6.3):
+
+| 앱 | 필요 환경변수 |
+| --- | --- |
+| 공통 | `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` (로컬 DB 계정이 기본값과 다르면) |
+| api | `OPENAI_API_KEY`(챗/임베딩), `JWT_SECRET`(선택·기본 더미), `GOOGLE_CLIENT_ID`, `APPLE_BUNDLE_ID`, `SENTRY_DSN` |
+| batch | `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DATA_GO_KR_SERVICE_KEY`, `AI_PROVIDER` |
+| admin | `SENTRY_DSN`(선택) |
+
+### 3) 실행
+
+```bash
+./gradlew :sttak-apps:sttak-api:bootRun     # API   (profile=local)
+./gradlew :sttak-apps:sttak-admin:bootRun   # Admin (profile=local)
+./gradlew :sttak-apps:sttak-batch:bootRun   # Batch (선택)
+./gradlew build                              # 전체 빌드 (테스트 + Jacoco)
+```
 
 ---
 
