@@ -91,6 +91,8 @@
   (둘 다 `SensitiveDataMasker` 적용, `SttakSentry`). 로그는 인코더 마스킹을 거치지 않으므로 필수.
 - **MDC 전파**: MDC 값은 Sentry 이벤트의 `contexts.MDC` 로 자동 첨부된다. `sttak-api` 는
   `sentry.context-tags: [requestId]` 로 `requestId` 를 **검색 가능한 태그**로 승격한다.
+  `sttak-batch` 는 같은 방식으로 `jobName`/`jobExecutionId`(`JobMdcListener` 가 MDC 에 적재)를 태그로 승격해
+  Sentry 이벤트를 잡·실행 단위로 필터할 수 있게 한다.
 
 ---
 
