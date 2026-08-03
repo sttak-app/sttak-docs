@@ -131,6 +131,30 @@ if (watchlist.size() >= MAX_SIZE) {
 }
 ```
 
+`BusinessException`은 두 가지 생성자를 갖는다. **원인(cause) 예외를 넘길지는 "그 자리에 잡은 예외가 있느냐"로 갈린다.**
+
+| 생성자 | 언제 | 판별 |
+| --- | --- | --- |
+| `BusinessException(BaseException)` | 도메인 규칙 위반을 **스스로 처음** 던질 때 (넘길 하위 예외가 없음) | `if` 검증에서 던진다 |
+| `BusinessException(BaseException, Throwable cause)` | 하위 예외를 **`catch` 해서** 도메인 예외로 감쌀 때 | `catch (X e)` 안에서 던진다 |
+
+```java
+// (1) if 검증 — 넘길 e 가 없다
+if (watchlist.size() >= MAX_SIZE) {
+    throw new BusinessException(UserException.WATCHLIST_LIMIT_EXCEEDED);
+}
+
+// (2) 인프라/기술 예외를 감쌀 때 — 잡은 e 를 반드시 cause 로 넘긴다
+try {
+    response = openAiRestClient.post()...;
+} catch (RestClientException e) {
+    throw new BusinessException(QuizException.QUIZ_GENERATION_FAILED, e);
+}
+```
+
+- `catch` 블록 안에서 던지는데 `e`를 안 넘기면 **근본 원인이 로그·Sentry에서 소실**된다 (§5-2.9의 "원인까지 적재"가 성립하려면 cause 체이닝이 필수).
+- 두 생성자 모두 `super(baseException.getMessage())`를 호출해 예외 메시지를 채운다 — message가 `null`이면 관측 도구에서 예외 식별이 어렵다.
+
 ### 5-2.4.3 GlobalExceptionHandler 매핑
 
 `sttak-api/.../exception/GlobalExceptionHandler` 단일 진입점.
