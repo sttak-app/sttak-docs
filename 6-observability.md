@@ -109,4 +109,13 @@
 | `sttak.ai.tokens.output` | counter | `provider` | LLM 가공 출력 토큰 (비용 추적) |
 
 활용 예: `deduped / collected` 비율이 1 에 가까우면 정상(증분 없음), `saved` 급증은 뉴스 유입 급증 신호.
-노출은 각 앱의 actuator(`/actuator/metrics`) 기준이며, 외부 수집기(CloudWatch/Prometheus) 연동은 추후 결정.
+
+## 6.6 메트릭 수집 — Prometheus + Grafana (dev, ADR-022)
+
+- 세 앱은 `micrometer-registry-prometheus` 로 메트릭을 `/actuator/prometheus` 에 노출한다. dev 에서는 이 엔드포인트를
+  **관리 포트 9000**(`management.server.port`)으로 분리해 공개 8080/ALB 에 실리지 않게 한다 — 메트릭 외부 노출 차단.
+  `sttak-batch` 는 웹 서버가 없었으므로 actuator 노출용으로 `spring-boot-starter-web` 을 더한다.
+- dev 에는 자체 호스팅 **Prometheus + Grafana** 를 ECS Fargate 로 띄운다. Prometheus 가 Cloud Map(`sttak-dev.local`)
+  A레코드를 `dns_sd` 로 받아 각 태스크의 `9000/actuator/prometheus` 를 Pull 수집하고, Grafana 로 시각화한다.
+- Grafana 는 ALB 미노출(dns내부 전용) — 접속은 ECS Exec + SSM 포트포워딩(`sttak-infra/docs/runbook-dev.md`).
+- 설계 배경·대안·배포 순서는 [ADR-022](../decisions/ADR-022-monitoring-prometheus-grafana-dev.md). prod 동형화·Alertmanager 알람은 후속.

@@ -394,7 +394,7 @@ sttak-infra/                   별도 리포 — Terraform IaC (ADR-007)
 5. **Flyway 도입 + 마이그레이션 잡**.
 6. **prod ECS Blue/Green + 수동 승인**.
 7. **Secrets Manager + OIDC**.
-8. **모니터링/알람 연동** (`6-observability.md`).
+8. **모니터링/알람 연동** (`6-observability.md`). — dev 메트릭 수집(자체 호스팅 Prometheus+Grafana) 구비(ADR-022 / §6.6). 알람(Alertmanager)·prod 동형화는 후속.
 9. **부하 테스트 stage 환경** (`5-1-test-case.md` §5-1.9).
 
 ---
