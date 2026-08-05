@@ -92,16 +92,21 @@
 
 ### 3-4.2.4 주문 회고
 
-- `OrderReview` — PK `review_id`, `order_id*` → `Order` (1:1), `AI_feedback`, `profit_loss_rate`, `proofit_loss_amount`
-- `OrderReason` — PK `order_reason_id`, `order_id*` → `Order`, `reason_template_id*` → `ReasonTemplate` (nullable: 자유 입력 허용 가정), `reason_content`
-- `ReasonTemplate` — PK `reason_template_id`, `reason_type`(ENUM), `reason_label`
-- `ReasonEvaluation` — PK `reason_evaluation_id`, `review_id*` → `OrderReview`, `order_reason_id*` → `OrderReason`, `model_name`, `evaluation_type`(ENUM), `evaluation_content`
+> **구현됨 (V14 reason_templates — SCRUM-32 / V15 order_reviews·reason_evaluations — SCRUM-68, [ADR-011](../decisions/ADR-011-mock-trade-execution-model.md) §7).**
+> 초안 대비 정정: `proofit_loss_amount` 오타 → `profit_loss_amount`, 모호한 `AI_feedback` 단일 컬럼 →
+> iOS 표시 계약에 맞춘 구조 컬럼(`summary_line`·`good_points`·`watch_points` TEXT[]), `ReasonEvaluation` 의
+> VARCHAR PK → BIGSERIAL, `model_name` 은 회고 본체로 이동. **`OrderReason` 은 미도입**(MVP 제외, SCRUM-32
+> — 근거는 `orders.rationale` 자유 입력 + `reason_templates` 빠른 선택 문구) — 따라서 `ReasonEvaluation`
+> 의 `order_reason_id` FK 도 제외되고 평가 대상은 `orders.rationale` 이다.
+
+- `order_reviews` (V15) — PK `review_id`, `order_id*` → `orders` **UNIQUE**(1:1, 생성 배치 멱등 키), `summary_line`, `good_points`/`watch_points`(TEXT[], 각 1개 이상 — `cardinality` CHECK), `profit_loss_amount`(정수 원)·`profit_loss_rate`(DECIMAL(9,4) %)·`is_partial_sell`(생성 시점 스냅샷 — 주문 이력 기준 판정), `model_name`. **생성 후 불변**(updated_at 없음)
+- `reason_templates` (V14) — PK `reason_template_id`, `reason_type`(`BUY`|`SELL`), `reason_label` — 정적 시드
+- `reason_evaluations` (V15) — PK `reason_evaluation_id`(BIGSERIAL), `review_id*` → `order_reviews`, `evaluation_type`(`GOOD`|`BAD`|`IMPROVEMENT` CHECK), `evaluation_content`
 
 관계:
 
-- `Order 1 ── 1 OrderReview`
-- `Order 1 ──< N OrderReason`, `ReasonTemplate 1 ──< N OrderReason`
-- `OrderReview 1 ──< N ReasonEvaluation`, `OrderReason 1 ──< N ReasonEvaluation`
+- `orders 1 ── 0..1 order_reviews` (매도 FILLED 만 생성 대상)
+- `order_reviews 1 ──< N reason_evaluations`
 
 ### 3-4.2.5 차트/시그널
 
