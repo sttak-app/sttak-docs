@@ -258,19 +258,13 @@ application.yml            (공통: 앱 이름 + 기본 프로파일 active: loc
 - **Blue/Green.** 새 태스크 셋을 띄우고 readiness 확인 → ALB 가중치 100% 전환 → 이전 셋 종료.
 - 전환 후 **5분 모니터링 윈도우**: 5xx 비율 > 1% 또는 p95 위배 시 자동 롤백.
 
-### 7.8.3 batch
+### 7.8.3 batch — 전 잡 Jenkins 트리거 1회 실행 *(ADR-023, 구 ADR-006 Superseded)*
 
-- **상시 Fargate 서비스**(`desired_count=1`, ALB 없음)로 배포 *(ADR-006)*. 뉴스/임베딩 파이프라인이 in-process `@Scheduled`(`@EnableScheduling`)로 cron 을 돌리므로, 주기마다 컨테이너를 새로 띄우는 ECS Scheduled Task 모델 대신 상시 실행한다.
-- 동시 실행 방지(`max concurrent: 1`): **인스턴스 1개 = 스케줄러 1개**로 중첩을 원천 차단. 2개 이상으로 스케일 시 분산 락 필요(후속 ADR).
-- 배포 동작은 api/admin 과 동일(새 task def revision 등록 → `update-service` rolling).
-- > 진짜 Scheduled Task(필요 시에만 실행, 비용↓)로 전환하려면 batch 를 "부팅 → 잡 1회 → 종료"로 재설계해야 한다 *(ADR-006 Consequences)*.
-
-#### 7.8.3.1 주가 수집 잡 — Jenkins 트리거 1회 실행 *(ADR-019)*
-
-- **주가 일봉 수집은 상시 스케줄이 아니라 Jenkins 가 트리거하는 1회 실행 프로세스**다. 같은 batch 이미지를 쓰되 `--run-stock-daily` / `--run-stock-backfill [--backfill-days=N]` 인자로 기동 → 잡 1회 실행 → 종료코드 회신 후 종료. 상시 batch 서비스에는 주가 수집 크론이 **없다** — `@Scheduled` 는 뉴스/임베딩 전용.
-- 트리거 모드(`--run-stock-*`)로 기동된 프로세스는 **뉴스/임베딩 `@Scheduled` 를 자동으로 끈다**(`sttak.scheduling.enabled=false` 기본 적용) — 1회 실행이 크론 시각(정각/30분/45분)을 넘겨도 상시 서비스와 같은 잡이 중첩 발화하지 않는다. §7.8.3 의 "인스턴스 1개 = 스케줄러 1개" 불변식은 트리거 모드에서도 유지된다.
-- 종료코드 계약: `0`(수집 성공/당일 이미 완료) · `42`(정상, 신규 데이터 미도착 — 실패 아님) · `1`(실패).
-- Jenkins 스케줄: 데일리 `0 13-23 * * 1-5`(매시 폴링 — 수집 성공 후 확인 라운드 1회를 거쳐 신규 0건이 확인되면 이후 회차는 NOOP, ADR-019 §5), 23:30 상태 리포트(최종 캔들 5일 이상 오래됐을 때만 경보 격상), 백필은 크론 없는 파라미터 빌드. 파이프라인 정의는 `jenkins/` 디렉터리 참조.
+- **batch 앱에는 더 이상 앱 내 스케줄러가 없다.** 전 잡(주가 수집·모의 매매 정산·뉴스 수집→가공→임베딩·퀴즈 생성)의 스케줄 소유권은 Jenkins 에 있고, batch 는 `--run-*` 플래그로 기동 → 잡 1회 실행 → 종료코드 회신 후 종료하는 프로세스다. `@Scheduled`/`@EnableScheduling`/`sttak.scheduling.enabled` 킬스위치는 전부 제거됐다(SCRUM-61 2차).
+- 플래그와 가드: 플래그 단일 출처는 `trigger/BatchRunFlags`. 디스패처(`trigger/BatchJobTriggerRunner`)가 오타·비옵션 인자·값 달린 플래그·러너 그룹 교차 조합을 exit 1 로 거부한다 — batch 는 web 앱(ADR-022 메트릭)이라 잘못된 호출이 조용히 상주 서버로 눌러앉는 것을 막는 장치.
+- 종료코드 계약: `0`(성공) · `1`(실패/잘못된 호출) · `42`(주가 daily 만 — 정상 실행, 신규 데이터 미도착). 상세는 `jenkins/README.md`.
+- Jenkins 잡 4종: 주가 데일리 `0 13-23 * * 1-5`(수집→정산 무조건 순차) · 백필(파라미터 수동, →정산) · 뉴스 `5 * * * *`(수집→가공→임베딩 순차 — 구 시간차 크론 대체) · 퀴즈 `0 6 * * *`. 23:30 상태 리포트는 별도(ADR-019 §5). 파이프라인 정의와 동시 기동 격리수준 규약(`isolation-level-for-create: read_committed`)은 `jenkins/` 디렉터리 참조.
+- **ECS 상주 서비스는 폐지 대상**(sttak-infra 작업): 전환 순서(코드 배포 → Jenkins 잡 활성화 → 상주 종료, 롤백 시 Jenkins 먼저 비활성화)는 `jenkins/README.md` 를 따른다. 실행 모드는 과도기 `local`(에이전트에서 bootJar 직접 실행) → 운영 `ecs`(`aws ecs run-task` 1회 실행, TODO).
 
 ---
 
