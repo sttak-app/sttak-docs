@@ -427,14 +427,16 @@ NewsCollectionPort      ◀── 구현 ─── NewsApiCollectionAdapter
 ```
 sttak-api / sttak-batch ──▶ sttak-external (Port 구현)
                                    │
-                                   ├── Claude Haiku  (분류 / 퀴즈 생성)
-                                   ├── Claude Sonnet (챗봇 / 회고)
+                                   ├── Claude Haiku  (분류 / 퀴즈 생성 / 매매 회고)
+                                   ├── Claude Sonnet (챗봇)
                                    └── OpenAI Embeddings (임베딩)
 ```
 
 전략:
 
 - **모델 선택은 어댑터/설정**에서 결정한다. 도메인은 “요약을 만든다”/“챗봇 응답을 받는다” 수준만 안다.
+- 매매 회고는 원안(Sonnet)에서 **Haiku 로 하향** — 신호 해설과 같은 "신규 이벤트당 1회 생성 + 조회 0회" 비용
+  구조로 묶는 SCRUM-68 결정. 품질 미달이 관찰되면 상향하되 ADR 로 기록한다.
 - 동일 입력에 대한 응답은 **캐시**한다 (특히 요약 / 임베딩).
 - **가드레일(`FR-G3`)** 은 어댑터의 응답 후처리 단계에 위치한다. 추천성 표현 차단 + 출처 부착 + AI 생성 표시.
 - 토큰 사용량·지연·비용 추정치를 메트릭으로 발행한다 *(NFR-O3)*.
