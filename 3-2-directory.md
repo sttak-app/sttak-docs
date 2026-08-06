@@ -325,6 +325,8 @@ Service 는 도메인/View 를 Application 출력(`<Context>Result` record) 으�
 com.sttak.sttakcommon/
 ├── response/
 │   └── ApiResponse<T>           success(content) / error(errorType, message) / inputError(...) 팩토리
+├── money/
+│   └── Won                      DECIMAL 가격 ↔ 정수(원) 변환 단일 출처 (모듈 공용 — 어댑터 사본 금지, SCRUM-65)
 └── exception/
     ├── BaseException            interface { ErrorType getErrorType(); String getMessage(); }
     ├── BusinessException        RuntimeException + BaseException 캡슐화
