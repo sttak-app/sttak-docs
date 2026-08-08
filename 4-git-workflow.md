@@ -22,6 +22,7 @@
 | `main` | 운영 배포 기준. 안정 코드만 포함. | — | **금지** |
 | `develop` | 개발 통합 기준. | `main` | **금지** |
 | `feature/*` | 기능 개발. | `develop` | 허용 |
+| `refactor/*` | 동작 변화 없는 구조 개선(리팩터링). 기능 추가 금지. | `develop` | 허용 |
 | `release/*` | 배포 준비 (검증·버그 수정·문서). | `develop` | 허용 |
 | `hotfix/*` | 운영 긴급 수정. | `main` | 허용 |
 
@@ -32,6 +33,9 @@
 - 일반 기능 작업은 항상 `develop`에서 `feature/*` 브랜치를 따서 진행하고, 완료 후 `develop`으로 PR/병합한다.
 - `main`, `develop`에는 **직접 커밋/푸시하지 않는다**. 변경은 반드시 PR을 거친다.
 - 하나의 `feature/*` 브랜치에서는 **하나의 기능/작업 단위**만 다룬다.
+- `refactor/*` 는 `feature/*` 와 같은 흐름(develop 분기 → PR)을 따르되, **동작이 변하면 안 된다** —
+  전후 테스트가 동일하게 통과해야 하고, 기능 추가/스펙 변경이 섞이면 `feature/*` 로 만든다.
+  브랜치 유형을 나누는 이유: PR 목록에서 "기능인지 구조 개선인지"를 이름만 보고 구분하기 위함.
 - 병합 완료된 `feature/*` 브랜치는 삭제한다.
 - `release/*`에서는 **신규 기능 개발 금지**. 검증·버그 수정·문서 수정만 수행한다.
 - `hotfix/*`는 운영 긴급 이슈에만 사용한다.
@@ -42,7 +46,7 @@
 ## 4.3 브랜치 네이밍
 
 - 소문자 영문, 숫자, 하이픈(`-`)만 사용. 공백·대문자·언더스코어 금지.
-- 형식: `feature/{Jira키}-{기능명}`, `hotfix/{Jira키}-{수정내용}`, `release/{버전}`
+- 형식: `feature/{Jira키}-{기능명}`, `refactor/{Jira키}-{대상}`, `hotfix/{Jira키}-{수정내용}`, `release/{버전}`
   - Jira 키는 **대문자 원형 그대로**(예: `SCRUM-123`) 사용한다. Jira 연동 인식을 위해 변형하지 않는다.
   - 기능명/수정내용은 소문자 + 하이픈(kebab-case)으로 3~5단어 이내로 짧게 적는다.
   - `release/*`는 버전을 기준으로 하므로 Jira 키를 붙이지 않는다.
@@ -52,6 +56,7 @@
 | --- | --- |
 | `feature/SCRUM-123-apple-login` | ✅ |
 | `hotfix/SCRUM-456-token-refresh-error` | ✅ |
+| `refactor/SCRUM-789-won-helper-dedup` | ✅ |
 | `release/v1.0.0` | ✅ (버전 기준, 키 없음) |
 | `feature/apple-login` | ⚠️ Jira 이슈가 있으면 키 포함 권장 |
 | `feature/SCRUM-123-Login` | ❌ 대문자 |
@@ -166,6 +171,7 @@ PR 본문이 너무 구체적이고 장황하면 리뷰어가 "무슨 말인지"
 | 브랜치 | 머지 대상 |
 | --- | --- |
 | `feature/*` | `develop` |
+| `refactor/*` | `develop` |
 | `release/*` | `main` (그리고 `develop`에도 백머지) |
 | `hotfix/*` | `main` (그리고 `develop`에도 백머지) |
 
