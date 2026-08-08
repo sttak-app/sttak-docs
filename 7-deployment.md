@@ -165,6 +165,7 @@ push(main)    ─► deploy-prod.yml (manual approval)          ← 다음 단�
 | `main` | 운영 배포 기준 |
 | `develop` | 개발 통합 |
 | `feature/*` | 기능 개발 |
+| `refactor/*` | 동작 변화 없는 구조 개선 |
 | `release/*` | 배포 준비 (MVP는 거의 사용 X) |
 | `hotfix/*` | 운영 긴급 수정 |
 
