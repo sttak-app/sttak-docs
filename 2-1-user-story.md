@@ -169,8 +169,8 @@ MVP에서는 푸시 알림을 도입하지 않는다. 다음 시점에 도입을
 
 ## 2-1.5 후속 문서
 
-| 문서 | 연결 |
-| --- | --- |
+| 문서 | 연결                                  |
+| --- |-------------------------------------|
 | `2-2-requirements.md` | 본 문서의 User Story → 기능/비기능 요구사항으로 분해 |
-| `3-3-contract.md` | 위 핵심 흐름의 API를 OpenAPI 계약으로 명세 |
-| `3-1-server-architecture.md` | 두 갈래 처리 구조(실시간 vs 배치) 상세 |
+| `3-3-contract.md` | 위 핵심 흐름의 API 를 OpenAPI 계약으로 명세      |
+| `3-1-server-architecture.md` | 두 갈래 처리 구조(실시간 vs 배치) 상세            |
