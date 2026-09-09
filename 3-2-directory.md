@@ -136,7 +136,7 @@ com.sttak.sttakexternal.<context>/
 | JPA 엔티티 | `<Context>JpaEntity` (접미사 필수) | `UserJpaEntity` |
 | JPA 리포지토리 | `<Context>JpaRepository` | `UserJpaRepository` |
 | Port 구현 어댑터 | `<Context>RepositoryAdapter`, `<Context>QueryRepositoryAdapter` | `UserRepositoryAdapter` |
-| 외부 시스템 어댑터 | `<Vendor><Capability>Adapter` | `ClaudeChatStreamAdapter`, `DataGoKrStockPriceAdapter` |
+| 외부 시스템 어댑터 | `<Vendor><Capability>Adapter` | `OpenAiChatStreamAdapter`, `DataGoKrStockPriceAdapter` |
 | Application Service | `<Context>Service` | `UserService`, `TradeService` |
 | Application 입력 record | `<Action>Command` | `UserCreateCommand`, `TradeExecuteCommand` |
 | Application 출력 record | `<Context>Result` | `UserResult`, `TradeResult` |

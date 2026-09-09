@@ -196,10 +196,10 @@ com.sttak.sttakcommon
 ```
 com.sttak.sttakexternal
 └── <context>/
-    ├── ClaudeNewsSummarizationAdapter      implements NewsSummarizationPort
+    ├── OpenAiNewsAnalysisAdapter           implements NewsAnalysisPort
     ├── DataGoKrStockPriceAdapter           implements StockQuotePort         (일봉, ADR-010)
     ├── DataGoKrKrxListingAdapter           implements StockListingPort       (종목 마스터, ADR-010)
-    ├── ClaudeChatStreamAdapter             implements ChatStreamPort
+    ├── OpenAiChatStreamAdapter             implements ChatStreamPort
     ├── DartDisclosureAdapter               implements DisclosurePort
     └── ...
 ```
@@ -345,10 +345,10 @@ LLM / 시세 / 뉴스 등 외부 시스템 호출은 **도메인 Port의 구현�
 ```
 sttak-domain                          sttak-external
 ─────────────────                     ───────────────────────────────────
-NewsSummarizationPort   ◀── 구현 ─── ClaudeNewsSummarizationAdapter
+NewsAnalysisPort        ◀── 구현 ─── OpenAiNewsAnalysisAdapter
 StockQuotePort          ◀── 구현 ─── DataGoKrStockPriceAdapter   (일봉, ADR-010)
 StockListingPort        ◀── 구현 ─── DataGoKrKrxListingAdapter   (종목 마스터, ADR-010)
-ChatStreamPort          ◀── 구현 ─── ClaudeChatStreamAdapter
+ChatStreamPort          ◀── 구현 ─── OpenAiChatStreamAdapter
 EmbeddingPort           ◀── 구현 ─── OpenAIEmbeddingAdapter
 DisclosurePort          ◀── 구현 ─── DartDisclosureAdapter
 NewsCollectionPort      ◀── 구현 ─── NewsApiCollectionAdapter
@@ -427,18 +427,19 @@ NewsCollectionPort      ◀── 구현 ─── NewsApiCollectionAdapter
 ```
 sttak-api / sttak-batch ──▶ sttak-external (Port 구현)
                                    │
-                                   ├── Claude Haiku  (분류 / 퀴즈 생성 / 매매 회고)
-                                   ├── Claude Sonnet (챗봇)
-                                   └── OpenAI Embeddings (임베딩)
+                                   ├── OpenAI gpt-5.6-luna (뉴스 가공 / 퀴즈 / 차트 해설 / 매매 회고 / 챗봇
+                                   │                        + 가드레일 재작성·판정, ADR-032 luna 단일화)
+                                   └── OpenAI Embeddings   (임베딩)
 ```
 
 전략:
 
 - **모델 선택은 어댑터/설정**에서 결정한다. 도메인은 “요약을 만든다”/“챗봇 응답을 받는다” 수준만 안다.
-- 매매 회고는 원안(Sonnet)에서 **Haiku 로 하향** — 신호 해설과 같은 "신규 이벤트당 1회 생성 + 조회 0회" 비용
-  구조로 묶는 SCRUM-68 결정. 품질 미달이 관찰되면 상향하되 ADR 로 기록한다.
+- 생성 모델은 **luna 단일화**(ADR-032) — 원안의 용도별 Claude 분기(Haiku/Sonnet)는 폐기.
+  모델 상향·벤더 재분기가 필요해지면 ADR 로 기록한다.
 - 동일 입력에 대한 응답은 **캐시**한다 (특히 요약 / 임베딩).
-- **가드레일(`FR-G3`)** 은 어댑터의 응답 후처리 단계에 위치한다. 추천성 표현 차단 + 출처 부착 + AI 생성 표시.
+- **가드레일(`FR-G3`)** 은 2단 파이프라인(ADR-032)이다 — 생성 → 무조건 재작성 → LLM 판정
+  (룰 엔진은 후보 탐지 힌트) → 피드백 재작성(최대 2회) → 저장/폴백. 어댑터가 저장 전 단계에서 적용한다.
 - 토큰 사용량·지연·비용 추정치를 메트릭으로 발행한다 *(NFR-O3)*.
 
 ---

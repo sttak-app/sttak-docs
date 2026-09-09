@@ -213,10 +213,9 @@ application.yml            (공통: 앱 이름 + 기본 프로파일 active: loc
 | `SPRING_DATASOURCE_URL` | JDBC URL | dev/prod |
 | `SPRING_DATASOURCE_USERNAME` / `_PASSWORD` | DB 자격 | dev/prod (Secrets Manager) |
 | `JWT_SECRET` | JWT 서명 키 (HS256, ADR-005) | dev/prod (Secrets Manager) · local(선택, 기본 더미) |
-| `AI_PROVIDER` | 뉴스 AI 가공 제공자 선택: `anthropic`(기본)\|`openai` (ADR-004) | 선택 |
-| `ANTHROPIC_API_KEY` | Claude LLM (뉴스 AI 가공, `AI_PROVIDER=anthropic`, Anthropic SDK 표준 변수명, ADR-003) | dev/prod (Secrets Manager) |
-| `OPENAI_API_KEY` | OpenAI LLM (뉴스 AI 가공 `AI_PROVIDER=openai`, ADR-004) + 임베딩 | dev/prod (Secrets Manager) |
-| `OPENAI_MODEL` | OpenAI 가공 모델 오버라이드 (기본 `gpt-4o-mini`) | 선택 |
+| `AI_PROVIDER` | 생성 AI 제공자 스위치 — 구현은 `openai`(기본)뿐 (ADR-004 스위치 유지, ADR-032 luna 단일화) | 선택 |
+| `OPENAI_API_KEY` | OpenAI LLM (뉴스·퀴즈·차트 해설·회고·챗봇 생성 + 가드레일 재작성·판정, ADR-032) + 임베딩 | dev/prod (Secrets Manager) |
+| `OPENAI_MODEL` | OpenAI 생성 모델 오버라이드 (기본 `gpt-5.6-luna`) | 선택 |
 | `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | Naver 검색(뉴스) API (ADR-002) | dev/prod (Secrets Manager) |
 | `NEWS_API_KEY` | NewsAPI | dev/prod (Secrets Manager) |
 | `DART_API_KEY` | DART | dev/prod (Secrets Manager) |
@@ -339,7 +338,7 @@ docker run -d --name sttak-redis -p 6379:6379 redis:7
 | --- | --- |
 | 공통 | `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` (로컬 DB 계정이 기본값과 다르면) |
 | api | `OPENAI_API_KEY`(챗/임베딩), `JWT_SECRET`(선택·기본 더미), `GOOGLE_CLIENT_ID`, `APPLE_BUNDLE_ID`, `SENTRY_DSN` |
-| batch | `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DATA_GO_KR_SERVICE_KEY`, `AI_PROVIDER` |
+| batch | `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `OPENAI_API_KEY`, `DATA_GO_KR_SERVICE_KEY`, `AI_PROVIDER` |
 | admin | `SENTRY_DSN`(선택) |
 
 ### 3) 실행

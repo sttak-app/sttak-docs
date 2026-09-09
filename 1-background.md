@@ -67,7 +67,7 @@
 | 구분 | 항목 |
 | --- | --- |
 | 데이터 소스 | NewsAPI, DART OpenAPI, KRX/한국거래소 공개 데이터, 모의투자용 시세 |
-| LLM | OpenAI GPT-4o-mini, Anthropic Claude (요약/설명/챗봇 용도별 분기) |
+| LLM | OpenAI gpt-5.6-luna 단일화 (생성·가드레일 재작성·판정, ADR-032) + OpenAI Embeddings |
 | LLM 오케스트레이션 | LangChain 기반 RAG, Function Calling, Multi-Agent(토론형) |
 | 저장소 (예정) | Vector DB(임베딩), Graph 저장소(지식 그래프), 캐시(Redis 등) |
 | 인프라 | AWS (EC2/ECS, RDS, S3), CloudFront, GitHub Actions(CI/CD) |
@@ -122,7 +122,7 @@
 | **GraphRAG** | Vector 검색 + 지식 그래프 탐색을 결합한 RAG. 인과 설명에 사용. |
 | **Function Calling** | 차트 지표 계산 함수(이동평균/볼린저/RSI/MACD 등)를 LLM이 직접 호출해 좌표를 반환하게 하는 방식. |
 | **데이터 파이프라인 (Data Pipeline)** | 외부 뉴스/공시/시세를 주기적으로 수집·정제·태깅·요약·임베딩하는 비동기 배치. `sttak-batch`가 담당 예정. |
-| **LLM 가드레일 (Guardrail)** | “사야 한다”, “무조건 오른다” 같은 투자 추천성 표현을 차단하는 응답 후처리. |
+| **LLM 가드레일 (Guardrail)** | “사야 한다”, “무조건 오른다” 같은 투자 추천성 표현을 차단하는 저장 전 파이프라인 — 무조건 재작성 → LLM 판정 → 피드백 루프 (ADR-032). |
 
 ---
 
