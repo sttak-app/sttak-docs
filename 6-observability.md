@@ -108,6 +108,7 @@
 | `sttak.ai.tokens.input` | counter | `provider`, `job` | LLM 입력 토큰 (비용 추적 — job 으로 기능·가드레일 단계 구분, SCRUM-88) |
 | `sttak.ai.tokens.output` | counter | `provider`, `job` | LLM 출력 토큰 (비용 추적 — job 으로 기능·가드레일 단계 구분, SCRUM-88) |
 | `sttak.ai.guardrail.exhausted` | counter | `job` | 가드레일 재작성 소진 → 폴백 발생 (ADR-032 — 경보 대상) |
+| `sttak.ai.guardrail.judge.refusal` | counter | — | 판정 모델 refusal → 반려 처리 (입력 이상 신호 — 급증 시 점검) |
 
 활용 예: `deduped / collected` 비율이 1 에 가까우면 정상(증분 없음), `saved` 급증은 뉴스 유입 급증 신호.
 
