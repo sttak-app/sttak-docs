@@ -1,7 +1,27 @@
-# AI-3-2. 계약 — 입출력 불변 · 코드 잠금 · 폴백
+# AI-3-2. 계약 — 백엔드↔AI 호출 규격 · 입출력 불변 · 폴백
 
-> API 시그니처/응답 포맷 전체는 `../3-3-contract.md` 와 `docs/iosapi/apidocs.md` 가 원본.
-> 여기서는 AI 기능이 **백엔드의 나머지 부분·iOS 와 맺는 약속**을 정의한다.
+> API 시그니처/응답 포맷·iOS 조회 계약은 `../3-3-contract.md` 와 `docs/iosapi/apidocs.md` 가
+> 원본이다 — 프론트↔백엔드 경계는 그쪽 소관. **여기는 AI 문서로서 백엔드↔AI 벤더 경계**
+> (생성 호출 규격 — §AI-3-2.0)와 그 결과가 지켜야 할 내부 약속(무변경·코드 잠금·폴백)을 다룬다.
+> 전제 구조: 프론트는 AI 를 직접 호출하지 않는다 — 배치가 AI 와 주고받아 검증 통과분만
+> DB 에 저장하고, 프론트는 저장된 것을 조회할 뿐이다(경로 A, LLM 0회).
+
+## AI-3-2.0 백엔드 ↔ AI 벤더(OpenAI) — 생성 호출 계약
+
+전송은 Spring AI ChatModel/EmbeddingModel (ADR-033/034), 요청 규격은 다음으로 고정:
+
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 엔드포인트 | `{base-url}/chat/completions`·`/embeddings` (base-url 이 /v1 포함 — 중복 방지 completionsPath 지정) | ADR-034 |
+| 인증 | `Authorization: Bearer ${OPENAI_API_KEY}` — 키는 env 로만, 로그·예외 노출 금지 | NFR-S1 |
+| 요청 본문 | 시스템+유저 메시지, **strict json_schema**(손 스키마 고정), **temperature 등 샘플링 파라미터 미전송**(luna 가 거부 — 전송 시 400) | "요청 바이트 고정", 테스트로 회귀 가드 |
+| 토큰 상한 | 차트·회고·가드레일은 `max_completion_tokens` (⚠ `max_tokens` 아님 — 직렬화 필드 상이), 뉴스·퀴즈는 미전송 | ADR-034 |
+| 재시도 | 일시 오류(429/5xx·타임아웃)만 지수 백오프 최대 3회 — Spring AI 기본(10회·3분) 기각 | ADR-014, SpringAiRetrySupport |
+| 응답 처리 | strict 스키마 역직렬화 → 파이프라인(재작성·판정) → 코드 잠금 → 도메인 매핑. **refusal 은 실패 처리**(가드레일 판정만 예외적으로 반려 의미) | ADR-032 |
+| 관측 | 호출마다 GenAI span(Langfuse) + 토큰 카운터(job 태그) | `6-observability.md` |
+
+이 표가 곧 "요청 바이트 고정"의 정의다 — 여기서 벗어나는 변경(파라미터 추가·스키마 자동
+생성 등)은 실측 재검증 사안이다(AI-NFR7).
 
 ## AI-3-2.1 대원칙 — 파이프라인은 계약을 바꾸지 않는다
 
