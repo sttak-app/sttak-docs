@@ -1,7 +1,7 @@
 # AI-7. 배포 (AI 기능)
 
 > 배포 절차·인프라 전체는 `../7-deployment.md` 가 원본. 여기서는 AI 기능의 설정·키·롤아웃
-> 유의점만 정의한다. (§6 모니터링은 논의 중 — 확정 후 `6-observability.md` 로 추가)
+> 유의점만 정의한다. 관측(트레이스·메트릭·경보)은 `6-observability.md` 참조.
 
 ## AI-7.1 설정 카탈로그 (batch, 프로파일별 yml)
 
@@ -26,6 +26,8 @@
 | `OPENAI_API_KEY` | 생성 + 재작성 + 판정 + 임베딩 전부 | dev/prod (Secrets Manager) |
 | `OPENAI_MODEL` | 모델 오버라이드 (기본 gpt-5.6-luna) | 선택 |
 | `AI_PROVIDER` | 스위치 (기본 openai) | 선택 |
+| `LANGFUSE_OTLP_ENDPOINT` / `LANGFUSE_OTLP_AUTH` | Langfuse 트레이스 전송 (ADR-033) — 미주입 시 전송만 실패, 기능 무영향 | dev/prod (Secrets Manager) |
+| `LANGFUSE_TRACING_SAMPLING` | 트레이스 샘플링 (기본 1.0) | 선택 |
 
 ## AI-7.3 롤아웃 유의점 (파이프라인 첫 배포)
 
@@ -37,7 +39,7 @@
    1~2주 집계 후 과다 판단 시 `sttak.guardrail.mode=conditional` 전환 (yml/env 변경 + 재배포,
    코드 무변경).
 3. **경보 후보 등록** — `sttak.ai.guardrail.exhausted`(폴백 발생 = 위반 잔존 신호),
-   `sttak.ai.guardrail.judge.refusal`(입력 이상). 임계·채널은 §6 논의에서 확정.
+   `sttak.ai.guardrail.judge.refusal`(입력 이상). 임계·채널은 `6-observability.md §AI-6.5` 제안 기준으로 팀 확정.
 4. 차트 해설 백필 비용 참고치: 신호 5,350건 × (입력 ~850/출력 ~210 토큰) ≈ $10 안팎 1회성
    (ADR-025 §6) — 파이프라인 3호출 기준으로는 ×~2.2 환산.
 
