@@ -7,7 +7,7 @@
 
 | 분류 | 예 | 처리 | 이유 |
 | --- | --- | --- | --- |
-| 생성 호출 실패 | RestClientException, 타임아웃, 429/5xx | 재시도(`HttpRetrySupport`) → 소진 시 기능 예외로 변환 → **해당 건만 실패** | 벤더 일시 장애가 배치를 죽이면 안 됨 |
+| 생성 호출 실패 | `TransientAiException`(429/5xx), 타임아웃(`ResourceAccessException`) | 재시도(`SpringAiRetrySupport` — ADR-014 를 RetryTemplate 로 재구성, 3회. 4xx `NonTransientAiException` 은 즉시 실패) → 소진 시 기능 예외 → **해당 건만 실패** | 벤더 일시 장애가 배치를 죽이면 안 됨. `HttpRetrySupport`(resilience4j)는 비-AI 어댑터 전용으로 존속 |
 | 응답 형식 불량 | choices 비어있음, content null, JSON 파싱 실패 | 기능 예외 (해당 건 실패) | 저장 불가능한 결과 |
 | 가드레일 소진 | 피드백 2회 후에도 위반 잔존 | passed=false → 기능 예외 + `exhausted{job}` 카운터 | 위반 콘텐츠는 저장하지 않는다 (CON-S5) |
 | 잠금 위반 | 재작성이 라벨·정답·평가 구조 변경 | 기능 예외 (해당 건 실패) | 데이터 오염 차단 — 표현 정제가 판정을 바꾸면 안 됨 |
@@ -37,7 +37,7 @@
    않는다.
 3. **중복 격리** — 동시 실행·재실행으로 인한 UNIQUE 충돌(DuplicateKey)은 멱등 승리로 간주,
    흡수한다.
-4. **head-of-line 리스크 인지** — 오래된 순 + LIMIT 선정이라 결정적 실패 건이 매 회차
+4. **선두 점유(head-of-line) 리스크 인지** — 오래된 순 + LIMIT 선정이라, 계속 실패하는 건이 매 회차
    앞자리를 차지할 수 있다. 같은 건의 실패 로그 반복 관찰 시 retry_count 패턴 도입
    (ADR-024/025 공통 수용 조건).
 

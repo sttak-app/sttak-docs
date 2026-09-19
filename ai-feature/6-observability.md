@@ -47,7 +47,7 @@ ObservationRegistry 를 배선하면 호출마다 자동 발행된다.
 `LANGFUSE_TRACING_SAMPLING`(기본 1.0 — 물량이 배치 수백 건/일 수준이라 전수 수집, 비용 문제
 시 하향). 미주입 시 전송만 실패하고 기능은 무영향(관측은 기능 가용성을 깨지 않는다).
 
-## AI-6.3 메트릭 카탈로그 (AI 기능분)
+## AI-6.3 메트릭 분류 (AI 기능분)
 
 `../6-observability.md §6.5` 전체 표의 AI 부분. 전부 counter, 관리 포트 9000 으로 노출.
 
@@ -63,14 +63,12 @@ ObservationRegistry 를 배선하면 호출마다 자동 발행된다.
 `news-summary` · `news-sentiment` · `quiz-generation` · `chart-signal-explanation` ·
 `trade-retrospective` · `guardrail-rewrite` · `guardrail-judge`
 
-## AI-6.4 비용 관측 → 모드 전환 절차 (AI-NFR5 의 실행법)
+## AI-6.4 비용 관측 (AI-NFR5 의 실행법)
 
 1. `sttak.ai.tokens.*` 를 job 별로 1~2주 집계 (Grafana — input/output 분리, 단가 곱해 비용 환산)
 2. 구성비 확인: 가드레일 단계(rewrite+judge)가 전체의 어느 비중인지 — 설계 추정은 생성 대비
    ~60% 토큰(ADR-032)
-3. 과다 판단 시 `sttak.guardrail.mode=conditional` 전환 (yml/env — 코드 무변경, 근거 데이터
-   확보 상태)
-4. 전환 후 같은 지표로 절감 폭·`exhausted` 변화를 확인해 ADR 에 기록
+3. 상한(AI-NFR5) 대비 과다가 지속되면 팀 논의 — 비용 절감 방안은 그때 결정한다
 
 ## AI-6.5 경보 (제안 — 임계·채널은 팀 논의로 확정)
 

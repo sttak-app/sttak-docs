@@ -23,6 +23,87 @@
 이 표가 곧 "요청 바이트 고정"의 정의다 — 여기서 벗어나는 변경(파라미터 추가·스키마 자동
 생성 등)은 실측 재검증 사안이다(AI-NFR7).
 
+## AI-3-2.0a 기능별 AI 최종 산출물 JSON
+
+각 기능이 AI 에게 강제하는 strict json_schema 의 출력 형태 — 아래 예시가 곧 응답 계약이다
+(모든 필드 required, `additionalProperties: false`). 🔒 = 코드 잠금 대상(§AI-3-2.2, 재작성이
+바꾸면 반려). 스키마 원본은 각 어댑터의 `SCHEMA_JSON` 이 단일 출처.
+
+**뉴스 요약** (`news_summary` — 요약 트랙):
+
+```json
+{
+  "easyTitle": "삼성 메모리 호황",
+  "easyOneLiner": "AI 수요 확대로 HBM 주문이 늘며 실적 기대가 커졌다.",
+  "easyDetail": "3~5문장 상세 풀이 …",
+  "terms": [ { "term": "HBM", "definition": "고대역폭 메모리 — …" } ]
+}
+```
+
+**뉴스 호재/악재 판단** (`news_sentiment` — 판단 트랙):
+
+```json
+{
+  "perStock": [
+    {
+      "stockCode": "005930",          // 🔒
+      "sentiment": "POSITIVE",         // 🔒 enum: POSITIVE | NEGATIVE | NEUTRAL
+      "reason": "HBM 공급 확대로 실적 개선이 기대된다.",
+      "whyPoints": ["수요 증가", "가격 반등"]
+    }
+  ]
+}
+```
+
+**퀴즈** (`quiz_generation`):
+
+```json
+{
+  "quizzes": [
+    {
+      "content": "PER 이 뜻하는 것은?",
+      "choiceA": "…", "choiceB": "…", "choiceC": "…", "choiceD": "…",
+      "correctChoice": 2,              // 🔒 integer 1..4
+      "explanation": "정답 근거 + 흔한 오답 하나가 왜 아닌지 (2~3문장)"
+    }
+  ]
+}
+```
+
+**차트 신호 해설** (`chart_signal_explanation`):
+
+```json
+{ "explanation": "골든크로스는 5일 평균선이 20일 평균선을 … (4~5문장, 350자 이내)" }
+```
+
+**매매 회고** (`trade_retrospective`):
+
+```json
+{
+  "summaryLine": "기준을 지킨 매도였어요.",
+  "goodPoints": ["손절선을 지켰어요."],
+  "watchPoints": ["다음엔 매수 근거를 한 줄 적어보면 어떨까요? (학습 주제: 손절 기준)"],
+  "evaluations": [
+    { "type": "GOOD",                  // 🔒 enum: GOOD | BAD | IMPROVEMENT (개수+순서 잠금)
+      "content": "근거가 구체적이에요." }
+  ]
+}
+```
+
+**가드레일 판정** (`guardrail_verdict` — 파이프라인 내부, 전 기능 공용):
+
+```json
+{
+  "pass": false,
+  "violations": [ { "category": 4, "quote": "지금이 기회예요" } ]   // category 1..11
+}
+```
+
+- 재작성 호출만 예외적으로 **스키마 없는 자유 텍스트** 응답이다(원문과 같은 형식 유지는
+  형식 슬롯 지시 + 호출자 재파싱이 담당 — JSON 기능은 재파싱 실패 시 반려)
+- 이 산출물들은 프론트로 직행하지 않는다 — 파이프라인·잠금 통과 후 도메인 매핑되어 저장되고,
+  iOS 는 조회 API 의 응답 스키마(apidocs)로만 받는다
+
 ## AI-3-2.1 대원칙 — 파이프라인은 계약을 바꾸지 않는다
 
 가드레일 파이프라인(ADR-032)은 저장 전 단계에서만 동작한다. 따라서:
@@ -58,7 +139,7 @@
 - 흡수 범위는 Exception 계열 — Error(OOM)·프레임워크 장애는 잡을 실패시킨다(경보 정당).
 - 개별 실패가 잡·스텝·다른 건의 처리를 중단시키지 않는다 (건별 REQUIRES_NEW / 건별 catch).
 
-## AI-3-2.4 판정 불능의 방향 (fail-open 경계)
+## AI-3-2.4 판정 불능의 방향 — 실패 시 통과(fail-open)와 차단(fail-closed)의 경계
 
 | 상황 | 처리 | 이유 |
 | --- | --- | --- |

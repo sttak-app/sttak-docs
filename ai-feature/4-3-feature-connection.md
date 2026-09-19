@@ -7,6 +7,7 @@
 
 ```java
 // OpenAiTradeRetrospectiveAdapter.generate() — 회고 예시 (다른 기능도 동형)
+// 전송은 Spring AI ChatModel 경유(ADR-034) — 요청 규격·재시도는 3-2 §AI-3-2.0 이 계약
 String json = callOpenAi(candidate);                          // ① 1차 생성 (strict schema)
 GuardrailPipeline.Outcome outcome = guardrailPipeline.apply(
         JOB, json, GuardrailPrompts.RETRO_SLOT, TradeRetrospectiveSupport.EXTRA_PATTERNS);
@@ -55,7 +56,7 @@ static String describe(ChartSignalKind kind) {
 
 - 실험 1라운드에서 모델이 임의 파라미터(20/200일선)를 지어내는 결함 발견 → 실제 감지
   파라미터를 명시한 고정 설명문 주입으로 해결. 누락 시 "신호: null" 프롬프트로 엉뚱한
-  해설이 영구 저장되는 함정을 컴파일러가 막는다 (VOLUME_SPIKE 2차 대비).
+  해설이 영구 저장되는 함정을 컴파일러가 막는다 (2차 거래량 급증 신호 추가 대비).
 
 ## AI-4-3.4 뉴스 — 기능 2개, 트랙 2개, 저장 1건
 
@@ -82,5 +83,7 @@ public NewsAnalysis analyze(News news) {
 
 파이프라인(표현)과 별개로 퀴즈 고유 검증이 이어진다 (ADR-019):
 1. 구조 검증 — 4선지·정답 1..4·해설 존재 (`toGeneratedQuizzes` 가 무효 문항 드랍)
-2. 임베딩 유사도 0.80 초과 시 중복 폐기 → 재생성 (문항당 최대 3회)
+2. 임베딩 유사도 0.80 초과 시 중복 폐기 → 재생성 (문항당 최대 3회) — 저장소는
+   `quiz_vector` 테이블(V18, Spring AI VectorStore), 도메인은 `QuizSimilarityPort` 만 안다.
+   ES 이관 시 VectorStore 구현 교체로 끝나는 구조 (ADR-033 — 챗봇 RAG 와 별개 후속)
 3. 회피 목록 — 직전 생성 문항을 userPrompt "반드시 회피" 섹션에 나열

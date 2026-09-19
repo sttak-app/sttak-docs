@@ -18,9 +18,9 @@
 | 레이어 | 대상 | 방식 | 대표 케이스 |
 | --- | --- | --- | --- |
 | 단위 (external) | `InvestmentGuardrail` | 순수 함수 | 32케이스 — 종결형 검출, 예외 4규칙(부정·인용·따옴표·교육), 실측 오탐 문장 통과 |
-| 단위 (external) | `GuardrailPipeline` | 페이크 rewriter/judge | 15케이스 — always/conditional 분기, 피드백 루프, 소진 시 passed=false + 카운터, 판정 불능 통과 |
-| 단위 (external) | 판정/재작성 어댑터 | MockRestServiceServer | strict 스키마 파싱, 힌트 전달, 응답 불능 시 원문 유지/통과, **refusal 반려**, 펜스 스트립 |
-| 단위 (external) | 기능 어댑터 4종 | Mock HTTP + 페이크 파이프라인 | 통과본 매핑, 소진 시 기능 예외, JSON 깨짐 반려, **잠금 위반 반려**(라벨 반전·정답 변경·평가 구조 변경) |
+| 단위 (external) | `GuardrailPipeline` | 페이크 rewriter/judge | 피드백 루프, 소진 시 passed=false + 카운터, 판정 불능 통과 |
+| 단위 (external) | 판정/재작성 어댑터 | ChatModel Mock | strict 스키마 파싱, 힌트 전달, 응답 불능 시 원문 유지/통과, **refusal 반려**, 펜스 스트립, temperature 미전송 |
+| 단위 (external) | 기능 어댑터 4종 | ChatModel Mock + 페이크 파이프라인 | 통과본 매핑, 소진 시 기능 예외, JSON 깨짐 반려, **잠금 위반 반려**(라벨 반전·정답 변경·평가 구조 변경), 요청 규격 가드(§AI-5-1.3a) |
 | 단위 (external) | `<기능>Support` | 순수 함수 | 프롬프트 v2 조항, describe() 8종 비지 않음, sanitize 공백 정리만 |
 | 단위 (batch) | Tasklet/Processor | Mockito | Port 부재 시 스킵, 개별 실패 흡수, DuplicateKey 흡수 |
 | 통합 (batch) | 잡 E2E | `@SpringBootTest` + `@MockitoBean`(AI Port 스텁) + Testcontainers | 시드 → Reader→Processor→Writer → 상태 전이. 실 LLM 어댑터가 컨텍스트에 남지 않게 항상 mock |
@@ -39,6 +39,21 @@ assertThatThrownBy(() -> target.generate(candidate()))
 
 같은 패턴: 뉴스(sentiment 또는 stockCode 변경), 퀴즈(correctChoice 변경). 새 기능이 파이프라인에
 합류하면 이 3종 세트(통과/소진/잠금 위반)가 최소 요건이다.
+
+## AI-5-1.3a 요청 규격 회귀 가드 — 어댑터당 필수
+
+`3-2 §AI-3-2.0` 계약("요청 바이트 고정")을 CI 가 지키게 한다 — 전 어댑터 테스트에
+**temperature 미전송 assert** 가 있다(ADR-034 후속으로 전수 반영):
+
+```java
+OpenAiChatOptions opt = (OpenAiChatOptions) promptCaptor.getValue().getOptions();
+assertThat(opt.getTemperature()).isNull();     // Spring AI 자동설정 기본 0.7 주입 사고 차단
+assertThat(opt.getResponseFormat().getJsonSchema().getName()).isEqualTo("...");  // strict 스키마 유지
+```
+
+근거: temperature 가 안 나가는 것은 "자동설정 off + 빌더 무기본값" 구성 조합의 결과라,
+설정 한 줄(`spring.ai.openai.chat.options.*`)이나 버전업으로 조용히 깨질 수 있다 — luna 는
+temperature 를 거부하므로 그 순간 전 호출 400. 새 어댑터 추가 시 이 가드도 최소 요건이다.
 
 ## AI-5-1.4 하지 않는 것
 

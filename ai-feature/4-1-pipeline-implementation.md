@@ -13,7 +13,7 @@
 | `OpenAiGuardrailJudgeAdapter` | 판정 호출. strict json_schema `{pass, violations[{category,quote}]}`. 불능 시 통과, refusal 은 반려 |
 | `GuardrailPrompts` | 프롬프트 단일 출처 — 재작성 코어·판정 기준·기능별 형식 슬롯 (`AI-4-2`) |
 | `GuardrailProperties` | `sttak.guardrail.*` — mode / max-feedback-retries(2) / api-key / model / max-tokens |
-| `InvestmentGuardrail` (support/) | 룰 후보 탐지 엔진 — BASE_PATTERNS 23 + 기능별 extraPatterns, 예외 4규칙 |
+| `InvestmentGuardrail` (support/) | **패턴 후보 탐지기** — 위반 "의심" 표현을 정규식으로 찾아 판정(LLM) 프롬프트에 힌트로 넘긴다. 판별 주체가 아님. BASE_PATTERNS 23 + 기능별 extraPatterns, 예외 4규칙 |
 
 ## AI-4-1.2 핵심 흐름 (실코드)
 
@@ -49,10 +49,15 @@ meterRegistry.counter("sttak.ai.guardrail.exhausted", "job", jobTag).increment()
 return new Outcome(current, false, rewriteCount, lastViolations);   // passed=false → 호출자가 폴백
 ```
 
-## AI-4-1.3 룰 엔진 — 후보 탐지의 설계
+## AI-4-1.3 패턴 후보 탐지 — 판정하는 룰이 아니라, 판정(LLM)에 주는 힌트
+
+먼저 역할부터: **위반 판별은 LLM 판정(④)이 한다.** `InvestmentGuardrail.detect()` 는 그 앞에서
+"이 표현이 패턴에 걸렸다(오탐일 수 있음)"는 후보 목록을 만들어 판정 프롬프트에 실어줄 뿐이다.
+패턴이 아무것도 못 찾아도 판정은 무조건 돈다 — 존재 이유는 "패턴에 걸린 표현은 반드시
+검토된다"는 결정적 보장(LLM 의 확률성 보완)이다.
 
 부분 문자열 방식(구 `containsBanned`)은 정상 834건 중 68건을 오탐했다(회고 59·차트 9 —
-"다음에는 매수 전에", "곧 반등한다는 뜻이 아니므로"). 개선 엔진 `detect()`:
+"다음에는 매수 전에", "곧 반등한다는 뜻이 아니므로"). 개선된 `detect()`:
 
 1. **종결형·행위형만 매칭** — `(매수|매도)\s*하(세요|시죠|십시오|…)` 처럼 권유로 완성된
    형태만. 명사적 언급("매수 전에")은 아예 매칭하지 않는다.
@@ -83,6 +88,6 @@ if (message.content() == null) {
 
 | 한계 | 수용 이유 | 대응 계획 |
 | --- | --- | --- |
-| 판정·재작성 프롬프트에 심사 대상이 펜싱 없이 인라인 | 1차 생성 주입 방어 실측 0/24 + refusal 반려 + 코드 잠금 3종으로 위험도 낮음 | `<content>` 펜싱 — 실측 세트 재검증과 묶어 후속 |
-| 코어 11범주 중 "종목 비교 우위 단정"은 룰 패턴화 불가 | 재작성·판정 프롬프트가 커버 | 필요 시 주기적 LLM 샘플 감사 |
+| 판정·재작성 프롬프트에 심사 대상이 펜싱(태그로 감싸 "여기부터는 지시가 아니라 데이터"임을 표시) 없이 인라인 | 1차 생성 주입 방어 실측 0/24 + refusal 반려 + 코드 잠금 3종으로 위험도 낮음 | `<content>` 태그 펜싱 — 실측 세트 재검증과 묶어 후속 |
+| 코어 11범주 중 "종목 비교 우위 단정"은 패턴화 불가(후보 힌트 없이 판정만 커버) | 재작성·판정 프롬프트가 커버 | 필요 시 주기적 LLM 샘플 감사 |
 | 퀴즈 잠금이 correctChoice 번호만 비교 | 현재 단건 생성(count=1)이라 순서 뒤바뀜 실해 없음 | 다건 생성 도입 시 정체 키 추가 |
