@@ -12,7 +12,7 @@
 | `OpenAiGuardrailRewriteAdapter` | 재작성 호출. 실패 시 원문 유지. 마크다운 펜스 스트립 |
 | `OpenAiGuardrailJudgeAdapter` | 판정 호출. strict json_schema `{pass, violations[{category,quote}]}`. 불능 시 통과, refusal 은 반려 |
 | `GuardrailPrompts` | 프롬프트 단일 출처 — 재작성 코어·판정 기준·기능별 형식 슬롯 (`AI-4-2`) |
-| `GuardrailProperties` | `sttak.guardrail.*` — mode / max-feedback-retries(2) / api-key / model / max-tokens |
+| `GuardrailProperties` | `sttak.guardrail.*` — max-feedback-retries(2) / api-key / model / max-tokens |
 | `InvestmentGuardrail` (support/) | **패턴 후보 탐지기** — 위반 "의심" 표현을 정규식으로 찾아 판정(LLM) 프롬프트에 힌트로 넘긴다. 판별 주체가 아님. BASE_PATTERNS 23 + 기능별 extraPatterns, 예외 4규칙 |
 
 ## AI-4-1.2 핵심 흐름 (실코드)
@@ -20,14 +20,7 @@
 ```java
 public Outcome apply(String jobTag, String text, String formatSlot, List<Pattern> extraPatterns) {
 
-    if (properties.isConditionalMode()) {                       // 비용 절감 모드
-        GuardrailVerdict verdict = judgeOf(text, extraPatterns);
-        if (verdict.pass()) {
-            return new Outcome(text, true, 0, List.of());
-        }
-        return rewriteLoop(jobTag, text, formatSlot, extraPatterns, verdict.violations(), 0);
-    }
-    String rewritten = rewriter.rewrite(text, formatSlot, List.of());   // 기본: 무조건 재작성
+    String rewritten = rewriter.rewrite(text, formatSlot, List.of());   // 무조건 재작성 (단일 경로)
     GuardrailVerdict verdict = judgeOf(rewritten, extraPatterns);
     if (verdict.pass()) {
         return new Outcome(rewritten, true, 1, List.of());
