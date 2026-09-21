@@ -1,97 +1,68 @@
-# AI-6. 관측성 (AI 기능)
+# AF-6. 관측성 (배치 AI 기능)
 
-> 서비스 전체 관측성(로그/`X-Request-Id`/Prometheus 스택)은 `../6-observability.md` 가 원본.
-> 여기서는 AI 기능 특유의 세 층 — **건별 트레이스(Langfuse) · 집계 메트릭(Micrometer) ·
-> 로그** — 를 정의한다. 근거: ADR-033/034 (Spring AI 전환), ADR-022 (Prometheus).
+서비스 전체의 로그, 요청 ID, 메트릭 구성은 `../6-observability.md`를 따른다. AI 기능은
+트레이스, 메트릭, 로그의 세 가지 방식으로 관측하며 각 방식은 서로 보완한다. 예를 들어
+메트릭에서 재시도 횟수를 모두 사용한 건이 3개 보이면 트레이스에서 각 건의 재생성과 검수
+과정을 확인한다.
 
-## AI-6.1 관측의 세 층 — 무엇을 어디서 보나
-
-| 질문 | 층 | 도구 |
+| 질문 | 층 | 현재 사용 중인 도구 |
 | --- | --- | --- |
-| "이 콘텐츠가 왜 이렇게 나왔지?" (건별 추적) | 트레이스 | **Langfuse** — 프롬프트·응답·단계 타임라인 |
-| "비용·양이 얼마나 되지?" (집계) | 메트릭 | Micrometer → Prometheus/Grafana (관리 포트 9000, ADR-022) |
-| "뭐가 실패했지?" (사건) | 로그 | log.warn + Sentry (배치 MDC jobName 태그) |
+| "이 콘텐츠가 왜 이렇게 나왔지?"(건별 추적) | 트레이스 | Langfuse에서 프롬프트, 응답, 단계별 처리 시간을 확인한다 |
+| "비용과 처리량은 얼마나 되지?"(집계) | 메트릭 | Micrometer → Prometheus/Grafana |
+| "어떤 작업이 실패했지?"(사건) | 로그·경보 | `log.warn` + Sentry(배치 MDC의 `jobName` 태그) |
 
-세 층은 대체가 아니라 보완이다 — 메트릭이 "소진이 3건 있었다"를 알려주면, Langfuse 에서
-그 3건의 재작성·판정 내용을 연다.
+## AF-6.1 Langfuse 트레이스 자동 기록
 
-## AI-6.2 Langfuse 트레이스 (ADR-033/034)
+트레이스는 Spring AI GenAI Observation → Micrometer Observation → OTel 브리지 → OTLP →
+Langfuse 순서로 전달된다. 어댑터에서 span을 직접 만들지 않는다.
+`OpenAiChatModelSupport`와 `OpenAiEmbeddingModelSupport`가 `ObservationRegistry`를 연결하면
+각 호출의 span이 자동으로 생성된다.
 
-**경로**: Spring AI GenAI Observation → Micrometer Observation → OTel 브리지 → OTLP exporter
-→ Langfuse. 어댑터 코드는 span 을 직접 만들지 않는다 — `OpenAiChatModelSupport` 가
-ObservationRegistry 를 배선하면 호출마다 자동 발행된다.
+- **모든 LLM 호출을 건별 span으로 기록한다.** 기능별 생성, 재생성, 검수와 피드백 반복,
+  임베딩, 퀴즈 유사도 벡터 검색을 모두 포함한다. 벡터 검색의 질문과 결과는
+  `VectorStoreContentObservationFilter`가 기록한다. 가드레일 호출을 빼면 비용과 지연의
+  상당 부분을 파악할 수 없으므로 예외 없이 기록한다.
+- **본문 기록 정책**(`spring.ai.chat.observations.*`): local과 dev에서는 디버깅과 품질
+  검수를 위해 프롬프트와 응답 본문을 기록한다. **prod에서는 모델, 토큰, 지연 시간 같은
+  메타데이터만 기록한다.** 사용자가 작성한 `rationale`과 생성된 콘텐츠는 외부 SaaS에 남기지
+  않는다. 본문 기록이 필요하면 제한된 기간에만 활성화한다.
+- **설정·시크릿**: `LANGFUSE_OTLP_ENDPOINT` · `LANGFUSE_OTLP_AUTH`(Basic 인증, 시크릿
+  저장소), `LANGFUSE_TRACING_SAMPLING`(기본 1.0)을 사용한다. 배치 처리량은 하루 수백 건
+  수준이므로 모든 호출을 기록한다. 설정하지 않으면 트레이스 전송만 실패하며 기능 동작에는
+  영향을 주지 않는다.
 
-**무엇이 뜨나** — 배치 LLM 호출 전부:
-
-| span | 발생 지점 |
-| --- | --- |
-| 생성 (기능 5종) | 뉴스 요약·판단 각 트랙, 퀴즈, 차트 해설, 회고 |
-| 재작성 / 판정 | 가드레일 파이프라인 — 피드백 루프 반복까지 건별로 보임 |
-| 임베딩 | 퀴즈 유사도 + 지식/챗봇 RAG (공용 EmbeddingModel) |
-| 벡터 검색 | 퀴즈 유사도 검색 — 질의/결과를 span input/output 으로 승격 (`VectorStoreContentObservationFilter`) |
-
-**안 뜨는 것 (알려진 공백)**: 챗봇 스트리밍(`OpenAiChatStreamAdapter`) — SSE+스트리밍 필터의
-리액티브 재작성 위험 때문에 Spring AI 전환에서 의도적으로 제외(ADR-034). 챗봇 관측은 RAG
-개편의 단계별 로깅 설계(query → BM25/kNN/RRF/rerank 청크 → 생성 출력 → 토큰·지연)와 함께
-수동 Observation 으로 별도 정의한다.
-
-**프로파일 정책** (`spring.ai.chat.observations.*`):
-
-| 프로파일 | log-prompt / log-completion | 이유 |
-| --- | --- | --- |
-| local / dev | true — 프롬프트·응답 본문 포함 | 디버깅·품질 검수용 |
-| **prod** | **false — 메타(모델·토큰·지연)만** | 사용자 유래 입력(rationale)·생성 콘텐츠를 외부 SaaS 에 남기지 않는다. 필요 시 한시적 true 전환 |
-
-**설정·시크릿**: `LANGFUSE_OTLP_ENDPOINT`(기본 cloud.langfuse.com OTLP) ·
-`LANGFUSE_OTLP_AUTH`(Basic 인증 — Secrets Manager, NFR-S1) ·
-`LANGFUSE_TRACING_SAMPLING`(기본 1.0 — 물량이 배치 수백 건/일 수준이라 전수 수집, 비용 문제
-시 하향). 미주입 시 전송만 실패하고 기능은 무영향(관측은 기능 가용성을 깨지 않는다).
-
-## AI-6.3 메트릭 분류 (AI 기능분)
-
-`../6-observability.md §6.5` 전체 표의 AI 부분. 전부 counter, 관리 포트 9000 으로 노출.
+## AF-6.2 구현된 메트릭
 
 | 메트릭 | 태그 | 의미 |
 | --- | --- | --- |
-| `sttak.ai.tokens.input` / `.output` | `provider`, `job` | LLM 토큰 (비용 추적, NFR-O3). job 으로 기능·가드레일 단계 구분 |
-| `sttak.ai.guardrail.exhausted` | `job` | 재작성 소진 → 폴백 발생. **경보 후보 1순위** — 위반 잔존 신호 |
-| `sttak.ai.guardrail.judge.refusal` | — | 판정 모델 refusal → 반려. 입력 이상 신호 — 급증 시 주입 시도·데이터 오염 점검 |
-| `sttak.quiz.saved` / `.rejected` / `.slot.skipped` | — | 퀴즈 저장/유사도 반려/슬롯 포기 |
-| `sttak.news.collected` / `.deduped` / `.saved` | — | 뉴스 수집 파이프라인 (ADR-014) |
+| `sttak.ai.tokens.input` / `.output` | `provider`, `job` | LLM 토큰 사용량과 비용을 추적한다. `job`으로 기능과 가드레일 단계를 구분한다 |
+| `sttak.ai.guardrail.exhausted` | `job` | 재생성 횟수를 모두 사용해 대체 처리가 실행된 횟수다. 위반이 끝까지 남았다는 뜻이므로 우선 확인한다 |
+| `sttak.ai.guardrail.judge.refusal` | 없음 | 검수 refusal로 결과를 반려한 횟수다. 갑자기 늘면 프롬프트 주입 시도나 데이터 오염을 점검한다 |
+| `sttak.quiz.saved` / `.rejected` / `.slot.skipped` | 없음 | 퀴즈 저장, 유사도 기준 초과로 반려, 생성 슬롯 포기 횟수를 각각 기록한다 |
 
-**job 태그 값** (= Langfuse span 식별자와 동일 체계):
-`news-summary` · `news-sentiment` · `quiz-generation` · `chart-signal-explanation` ·
-`trade-retrospective` · `guardrail-rewrite` · `guardrail-judge`
+**job 태그 값**(Langfuse span 식별자와 같은 체계): `quiz-generation` ·
+`chart-signal-explanation` · `trade-retrospective` · `guardrail-rewrite` · `guardrail-judge`
+(뉴스 작업은 `news-summary`와 `news-sentiment`를 사용한다. 자세한 내용은 `../ai-chatbot/6` 참고).
 
-## AI-6.4 비용 관측 (AI-NFR5 의 실행법)
+## AF-6.3 비용 관측
 
-1. `sttak.ai.tokens.*` 를 job 별로 1~2주 집계 (Grafana — input/output 분리, 단가 곱해 비용 환산)
-2. 구성비 확인: 가드레일 단계(rewrite+judge)가 전체의 어느 비중인지 — 설계 추정은 생성 대비
-   ~60% 토큰(ADR-032)
-3. 상한(AI-NFR5) 대비 과다가 지속되면 팀 논의 — 비용 절감 방안은 그때 결정한다
+1. `sttak.ai.tokens.*`를 job별로 주기적으로 집계하고(Grafana, input/output 분리) 단가를 곱해
+   비용으로 환산한다.
+2. 전체 비용에서 검증 단계(`rewrite`+`judge`)가 차지하는 비율을 확인한다. 설계 단계에서는
+   생성 토큰의 약 60%로 예상한다.
+3. 상한(NFR2)보다 높은 사용량이 계속되면 팀에서 원인을 확인하고 절감 방안을 정한다.
 
-## AI-6.5 경보 (제안 — 임계·채널은 팀 논의로 확정)
+## AF-6.4 경보 후보 (임계·채널은 팀 확정)
 
 | 신호 | 조건(안) | 의미 |
 | --- | --- | --- |
-| `sttak.ai.guardrail.exhausted` | 1건 이상/일 | 폴백 발생 — 프롬프트·판정 기준의 회귀 가능성. Langfuse 로 해당 건 추적 |
-| `sttak.ai.guardrail.judge.refusal` | 급증 (기준선 대비) | 입력 이상 — rationale 주입 시도 등 |
-| `sttak.ai.tokens.*` 일 합계 | 추정치(파이프라인 +690 + 뉴스 분리 +555 호출/일) 대비 급증 | 루프 폭주·재시도 폭증 |
-| 배치 잡 실패 | 기존 Jenkins Slack 경보(SCRUM-87) | LLM 장애로 인한 잡 레벨 실패 |
+| `exhausted` 발생 | 하루 1건 이상 | 프롬프트나 판정 기준의 품질이 떨어졌을 수 있으므로 Langfuse에서 해당 건을 확인한다 |
+| `refusal` 급증 | 기준선 대비 | 프롬프트 주입 시도 등 입력 이상 여부를 점검한다 |
+| 일일 토큰 합계 급증 | 추정치 대비 | 반복 처리나 재시도가 비정상적으로 늘었는지 확인한다 |
+| 배치 작업 실패 | 기존 배치 Slack 경보 | LLM 장애 등으로 배치 전체가 실패했는지 확인한다 |
 
-침묵 감지(잡이 아예 안 도는 것)는 별도 팀 논의 사안 — 본 문서 범위 밖.
+## AF-6.5 로그와의 경계
 
-## AI-6.6 로그 (5-2 와의 경계)
-
-- 실패 로그 규약(식별자 중심·본문 미기록·키 금지)은 `5-2-error-handling.md §AI-5-2.4` 가 원본
-- 관측 층위 정리: **본문이 필요한 조사는 Langfuse(local/dev)** 로, 로그는 식별자·원인까지만 —
-  같은 정보를 두 곳에 남기지 않는다
-- 배치 로그는 MDC `jobName`/`jobExecutionId` 로 Sentry 태그 승격 (`../6-observability.md §6.4`)
-
-## AI-6.7 후속 (미확정)
-
-- 경보 임계·채널 확정 (§AI-6.5 는 제안 상태)
-- 챗봇 관측 설계 — RAG 개편(ES 전환)과 세트: 단계별 청크·지연 로깅, 수동 Observation 배선
-- PG↔ES 드리프트 메트릭 — ES 전환 시 신설 (체크리스트 참조)
-- Langfuse self-host 여부 — 현재 cloud SaaS, prod 본문 미기록으로 리스크 완화 중. 본문까지
-  남기려면 self-host 검토
+- 식별자 중심 기록, 본문 미기록, 키 노출 금지 등 실패 로그 규칙은 `5-2`를 따른다.
+- 본문이 필요한 조사는 트레이스(local/dev)로 하고, 같은 내용을 로그에 중복해서 남기지 않는다.
+- 배치 로그는 MDC `jobName`/`jobExecutionId` 가 Sentry 태그로 승격된다.

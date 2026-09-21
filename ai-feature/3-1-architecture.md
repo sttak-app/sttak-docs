@@ -1,89 +1,54 @@
-# AI-3-1. AI 기능 아키텍처
+# AF-3-1. 아키텍처 (배치 AI 기능)
 
-> 전체 서버 아키텍처는 `../3-1-server-architecture.md` (DDD + Hexagonal + CQRS, 두 갈래 구조).
-> 여기서는 AI 기능 5종이 그 구조 안에서 어떻게 배치되는지와 가드레일 파이프라인의 위치를 정의한다.
+이 문서는 AI 파이프라인 설계만 다룬다. 서버 전체 구조는 `../3-1-server-architecture.md`,
+모듈과 패키지 배치는 `../3-2-directory.md`를 참고한다. 통과·차단 기준을 포함한 실패 처리
+방법은 `5-2-error-handling`에서 설명한다.
 
-## AI-3-1.1 전체 그림
+## AF-3-1.1 설계 원칙
 
-**① 생성·검증 흐름 (경로 B — 배치)**
+1. **검증을 마치기 전에는 저장하지 않는다.** 모든 결과물은 재생성과 검수를 통과한 뒤에만
+   저장한다. 재시도 횟수를 모두 소진하면 해당 결과를 버리고 다음 배치에서 다시 시도한다.
+2. **생성은 배치에서 처리하고 조회는 저장된 값만 읽는다.** 신호 감지, 정산, 일 배치 등의
+   이벤트마다 한 번 생성해 저장한다. 사용자 조회 경로에서는 LLM을 호출하지 않는다.
+3. **AI가 맡을 범위를 분명히 나눈다.** 신호는 서버 규칙으로 감지하고 감지 조건은 사람이
+   작성한 고정 설명문으로 제공한다. 정답과 평가 타입은 코드로 보호한다. AI는 설명문 작성만
+   담당한다.
+4. **한 건의 실패 때문에 전체 작업을 멈추지 않는다.** 실패한 건은 저장하지 않는다. 결과가
+   없는 건은 다음 배치에서 다시 생성 대상으로 선택된다.
 
-```mermaid
-%%{init: {"themeVariables": {"fontSize": "14px"}}}%%
-flowchart TB
-    J1["뉴스 수집 → 가공 스텝"] --> GEN
-    J2["일봉 수집 → 신호 감지 → 해설 스텝"] --> GEN
-    J3["정산 잡 → 회고 스텝"] --> GEN
-    J4["퀴즈 생성 잡"] --> GEN
-    GEN["OpenAi〈기능〉Adapter — ① 1차 생성 (luna, 기능 프롬프트 v2)"]
-    GEN --> RW["② 무조건 재작성 — GuardrailRewriter"]
-    RW --> DET["③ 패턴 후보 탐지 — InvestmentGuardrail.detect (힌트)"]
-    DET --> JG["④ LLM 판정 — GuardrailJudge (피드백 ≤2회)"]
-    JG --> LOCK["⑤ 코드 잠금 검증 — 라벨·정답·평가 타입"]
-    LOCK -- "검증 통과분만 저장" --> PG[("PostgreSQL")]
-```
+## AF-3-1.2 생성·검증 파이프라인 (공통)
 
-**② 조회 흐름 (경로 A — 실시간, LLM 0회)**
+세 기능은 입력 데이터만 다르고, 생성 → 재생성 → 가드레일 검수라는 같은 흐름을 따른다.
+뉴스 가공 파이프라인(`../ai-chatbot/3-1`)도 같은 구조를 사용한다.
 
 ```mermaid
 %%{init: {"themeVariables": {"fontSize": "14px"}}}%%
 flowchart LR
-    PG[("PostgreSQL")] --> SVC["Service / QueryRepository"] --> IOS["iOS"]
+    Q["퀴즈 주제 지시<br/>(별도 입력 데이터 없음)"] --> GEN
+    S["감지된 신호<br/>+ 고정 설명문"] --> GEN
+    R["매매 기록<br/>+ 매매 근거(rationale)"] --> GEN
+    GEN["생성<br/>(기능별 프롬프트)"] --> RW["재생성<br/>(무조건 재작성)"]
+    RW --> GD["가드레일 검수<br/>(위반 시 재생성으로 피드백)"]
+    GD --> OUT["퀴즈 / 신호 해설 / 매매 회고"]
 ```
 
-- 잡(Tasklet/Step)은 오케스트레이션만 한다 — 대상 선정(결과 없는 건만 골라내는 anti-join 조회)·상한(batch-size)·트랜잭션.
-- 전송 계층은 **Spring AI ChatModel/EmbeddingModel**(ADR-033/034) — 공통 구성은
-  `OpenAiChatModelSupport`(경로·타임아웃·ADR-014 재시도·Langfuse Observation). 요청 규격은
-  `3-2 §AI-3-2.0` 이 계약. 챗 스트리밍만 RestClient 유지(전환 제외).
-- 생성 지식(프롬프트·스키마·매핑·파이프라인 연결)은 전부 `sttak-external` 어댑터에 있다.
-- 도메인은 Port 시그니처(도메인 타입)만 안다. 벤더 DTO 는 external 밖으로 새지 않는다(§3-2.5).
+- 검수를 통과한 결과만 사용한다. 피드백 재생성 횟수를 모두 소진하면 해당 결과는 버리고,
+  다음 배치에서 다시 시도한다.
+- 검수 후에는 **코드 잠금 검증**으로 정답 번호와 평가 타입 순서가 유지됐는지 확인한다.
+  퀴즈는 기존 문항과의 유사도도 비교하며, 의미가 겹치면 폐기하고 다시 생성한다.
+- 검수와 재생성 방식(항상 재생성, 피드백 반복, fail-open/closed 기준)은 챗봇·뉴스 기능과
+  같다. 기본 원리는 `../ai-chatbot/3-1`, 실패 처리 기준은 `5-2`를 참고한다.
 
-## AI-3-1.2 포트 ↔ 어댑터 매핑
+## AF-3-1.3 기능별 AI 입출력
 
-| Port (sttak-domain) | 어댑터 (sttak-external) | 활성 조건 | 잡 |
+아래 표는 LLM을 호출하는 시점과 입출력을 정리한 것이다. 자세한 규격과 예시는 `2-2`의 각
+기능 설명을 참고한다.
+
+| 호출 | 시점 | 입력 | 출력 |
 | --- | --- | --- | --- |
-| `NewsAnalysisPort` (요약+판단) | `OpenAiNewsAnalysisAdapter` | `sttak.ai.provider=openai` | 뉴스 가공 스텝 |
-| `QuizGenerationPort` | `OpenAiQuizGenerationAdapter` | 〃 | 퀴즈 생성 잡 |
-| `ChartSignalExplanationPort` | `OpenAiChartSignalExplanationAdapter` | 〃 | 일봉 수집 잡의 해설 스텝 |
-| `TradeRetrospectivePort` | `OpenAiTradeRetrospectiveAdapter` | 〃 | 정산 잡의 회고 스텝 |
-| (공용) `GuardrailRewriter` / `GuardrailJudge` | `OpenAiGuardrail{Rewrite,Judge}Adapter` | 〃 | — |
-
-- **뉴스 요약·판단은 기능 2개 : 어댑터 1개 : 트랙 2개** — 어댑터 안에서 두 트랙이 각자
-  생성(v2/v4 단독 프롬프트)→재작성→판정을 독립 수행 후 병합한다(AI-FR2b). 2차 평가가 이
-  분리 구성으로 실측됐기 때문(검증-운영 정합). jobTag(news-summary/news-sentiment)로 트랙별
-  메트릭도 분리된다. 모순 우려는 스모크 100건 교차 검수 0건으로 해소.
-- 차트·회고 잡은 Port 를 `ObjectProvider` 로 받는다 — 구현 없는 provider 값이면 해당 스텝만
-  비활성 스킵하고 부팅·수집·정산은 정상 동작한다.
-- `AI_PROVIDER` 스위치는 유지하나 구현은 openai 뿐이다(ADR-032). 재분기 시 어댑터 추가 + ADR.
-
-## AI-3-1.3 2단 가드레일 파이프라인 (ADR-032)
-
-```mermaid
-%%{init: {"themeVariables": {"fontSize": "14px"}}}%%
-flowchart TB
-    G["1차 생성 (luna)"] --> R["무조건 재작성 (luna)"]
-    R --> J{"판정 (luna + 룰 후보 힌트)"}
-    J -- "pass" --> S[("저장")]
-    J -- "위반 (category·quote)" --> F["피드백 재작성 — 최대 2회"]
-    F --> J
-    J -- "소진 (2회 후에도 위반)" --> X["저장 안 함 — log.warn +<br/>guardrail.exhausted{job} + 기능별 폴백"]
-```
-
-역할 분담과 그 근거 (전부 SCRUM-73 실측, 상세 수치는 ADR-032):
-
-| 단계 | 담당 | 왜 이렇게 |
-| --- | --- | --- |
-| 재작성 | LLM, **무조건** | 걸린 것만 고치는 조건부 대비 잃는 것 없이(회귀 1.3%, 라벨 깨짐 0) 스타일 향상 확보. "그대로 출력" 조항도 제거(v3 실험) |
-| 후보 탐지 | 룰 엔진 (`InvestmentGuardrail.detect`) | 결정적 보장 — 패턴에 걸린 표현은 반드시 LLM 이 검토. 종결형 매칭 + 예외 4규칙로 오탐 0/834 |
-| 최종 판정 | LLM | 경계문 판별 룰 50% vs LLM 86%. 판정 불능(호출·파싱 실패)은 통과(가용성 우선), **refusal 은 반려**(입력 이상 신호) |
-| 구조 보호 | 코드 (어댑터) | 라벨·정답·평가 타입은 LLM 에 맡기지 않는다 — 동등성 검증 실패 시 반려 (`AI-3-2.2`) |
-
-## AI-3-1.4 데이터 소유와 멱등성
-
-| 기능 | 저장 위치 | 멱등 키 | 재생성 정책 |
-| --- | --- | --- | --- |
-| 뉴스 요약·판단 | `news_analysis`(요약·terms) + `news_stock`(판단) (ADR-003) | 뉴스 상태머신 (COLLECTED→ENRICHED) — 트랙은 분리돼도 전이는 기사 단위 | 한 트랙이라도 실패 시 상태 유지 → 다음 회차 재시도 (retry_count, V8) |
-| 퀴즈 | `quiz` (문항) + `quiz_vector` (유사도 임베딩, V18 — Spring AI VectorStore 전용 테이블) | 유사도 0.80 중복 차단 (`QuizSimilarityPort`) | 문항당 최대 3회 재시도 |
-| 차트 해설 | `chart_signal_explanations` | `chart_signal_id UNIQUE` (V12) | 해설은 불변 — 실패 건만 anti-join 재등장 (ADR-025) |
-| 회고 | `order_reviews` | 주문 UNIQUE | 실패 건만 anti-join 재등장 (ADR-024) |
-
-파이프라인 도입으로 **저장 스키마는 아무것도 바뀌지 않았다** — 가드레일은 저장 전 단계에서만 동작한다.
+| 퀴즈 생성 | 일 배치 | 주제 범위 프롬프트 | 문항 + 선지 4 + 정답 + 해설 |
+| 퀴즈 유사도 임베딩 | 문항 생성마다 | 문항 텍스트 | 벡터 (기존 문항과 비교) |
+| 신호 해설 생성 | 신호 감지 후 | 신호 종류 + 종목 + 발생 시점 + 고정 설명문 | 해설 4~5문장 |
+| 회고 생성 | 매도 정산 후 | 매매 정보 + rationale(주입 방어 처리) | summaryLine + goodPoints + watchPoints + evaluations |
+| 재생성 | 생성마다 | 1차 생성물 + 형식 규칙 (+ 검수 피드백) | 재작성문 |
+| 검수 | 재생성마다 | 재작성문 + 후보 탐지 힌트 | pass / 위반 목록(범주·인용) |
